@@ -1,9 +1,9 @@
 import os
 import cv2
 import pickle
+import glob
 import numpy as np
 import matplotlib.pyplot as plt
-# import matplotlib.image as mpimg
 from time import time
 from sklearn.model_selection import train_test_split
 from sklearn import svm
@@ -11,9 +11,6 @@ from sklearn.metrics import accuracy_score
 from sklearn.metrics import precision_recall_fscore_support
 from skimage.feature import hog
 from prettytable import PrettyTable
-
-
-# from skimage import data, color, exposure
 
 
 class Params:
@@ -45,7 +42,7 @@ def format_image(image):
     return image
 
 
-def load_and_pickled_dataset():
+def load_and_pickle_datasets():
     """
     Loads the datasets, converts their images to the desired size and format, assembles them in one big
     dataset and saves it in a pickled file before returning it.
@@ -115,6 +112,7 @@ def compute_channel_features(channel):
                    cells_per_block=Params.hog_cells_per_block,
                    block_norm=Params.hog_block_norm,
                    feature_vector=True,
+                   transform_sqrt=True,
                    visualise=False)
 
     # hog_image_rescaled = exposure.rescale_intensity(hog_image, in_range=(0, 0.02))
@@ -128,15 +126,6 @@ def compute_image_features(image):
     hls_image = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
     features = compute_channel_features(hls_image[:, :, 1])
     return features
-
-
-'''def train_and_pickle_classifier(train_feat_x, train_y):
-    start = time()
-    classifier = svm.SVC(kernel='linear', C=.1)
-    classifier = classifier.fit(train_feat_x, train_y)
-    print('Trained classifier in', round(time() - start), 's')
-    pickle.dump(classifier, open(Params.pickled_classifier, "wb"))
-    return classifier'''
 
 
 def fit_and_pickle_classifier(train_x, train_y, valid_x, valid_y):
@@ -167,14 +156,88 @@ def fit_and_pickle_classifier(train_x, train_y, valid_x, valid_y):
                    '{:.3f}'.format(item[3]),
                    '{}'.format(item[4])])
     print(t)
+    return classifier
+
+
+class Windows_grid:
+    """
+    Generator for detection windows in a grid.
+    """
+
+    def __init__(self, x_res, y_res):
+        """
+        Initialises the generator to produce detection windows on an image with the given resolution
+        """
+        self._x_res = x_res
+        self._y_res = y_res
+        self._roi = (0, self._y_res // 2), (self._x_res - 1, self._y_res - 1)
+        self._x_size = 64
+        self._y_size = 64
+        self._x_step = 16
+        self._y_step = 16
+
+    def __iter__(self):
+        def home(factor):
+            """
+            Returns the coordinates for the starting position of the detection window in the ROI (upper-left corner).
+            """
+            x0, y0 = self._roi[0]
+            x1, y1 = x0 + self._x_size * factor - 1, y0 + self._y_size * factor - 1
+            return x0, y0, x1, y1
+
+        for enlargement in range(1, 4):
+            x0, y0, x1, y1 = home(enlargement)
+            while True:
+                # Sanity checks (sane paranoia)
+                assert x1 - x0 + 1 == self._x_size * enlargement and y1 - y0 + 1 == self._y_size * enlargement
+                assert x1 > x0 and y1 > y0
+                assert x0 >= self._roi[0][0] and x0 <= self._roi[1][0]
+                assert y0 >= self._roi[0][1] and y0 <= self._roi[1][1]
+                assert x1 <= self._roi[1][0]
+                assert y1 <= self._roi[1][1]
+
+                yield (x0, y0), (x1, y1)
+                # Slide one step to the right
+                x0 += self._x_step * enlargement
+                x1 = x0 + self._x_size * enlargement - 1
+                ''' If the window is now even partly out of the ROI to the right, slide one step down and return
+                as left as possible '''
+                if x1 > self._roi[1][0]:
+                    x0 = self._roi[0][0]
+                    x1 = x0 + self._x_size * enlargement - 1
+                    y0 += self._y_step * enlargement
+                    y1 = y0 + self._y_size * enlargement - 1
+                    ''' If the window is now even partly out of the ROI to the bottom, return it to the starting position,
+                     at the top left of the roi '''
+                    if y1 > self._roi[1][1]:
+                        break
+
+
+def draw_bounding_box(image, x0, y0, x1, y1, color = [255, 0, 0]):
+    cv2.rectangle(image, (x0, y0), (x1, y1), color=color)
+
+
+def display_image_with_windows(image):
+    # Initialize the detection windows maker
+    windows = Windows_grid(image.shape[1], image.shape[0])
+
+    color = [255, 0, 0]
+    for window in windows:
+        draw_bounding_box(image, window[0][0], window[0][1], window[1][0], window[1][1], color)
+        color[0] = (color[0] - 64) % 256
+        color[2] = (color[2] + 64) % 256
+
+    image = image[:, :, ::-1]
+    plt.imshow(image)
+    plt.show()
 
 
 if __name__ == '__main__':
 
     # Read the dataset (and save it pickled, if not done already)
     if not os.path.isfile(Params.pickled_dataset):
-        print('Dataset file', Params.pickled_dataset,'not found; making it.')
-        dataset_x, dataset_y = load_and_pickled_dataset()
+        print('Dataset file', Params.pickled_dataset, 'not found; making it.')
+        dataset_x, dataset_y = load_and_pickle_datasets()
     else:
         with open(Params.pickled_dataset, mode='rb') as pickle_file:
             print('Loading dataset from file', Params.pickled_dataset)
@@ -189,13 +252,54 @@ if __name__ == '__main__':
     print('Training dataset size', len(train_y), ', validation', len(valid_y), ', test', len(test_y))
 
     if not os.path.isfile(Params.pickled_classifier):
-        print('Trained classifier file',Params.pickled_classifier,'not found; making it.')
+        print('Trained classifier file', Params.pickled_classifier, 'not found; making it.')
         classifier = fit_and_pickle_classifier(train_x, train_y, valid_x, valid_y)
     else:
         with open(Params.pickled_classifier, mode='rb') as pickle_file:
-            print('Loading trained classifier from file',Params.pickled_classifier)
+            print('Loading trained classifier from file', Params.pickled_classifier)
             classifier = pickle.load(pickle_file)
             assert classifier is not None
+
+    # Load a test camera frame
+    for fname in glob.glob('test_images/*.jpg'):
+        frame = cv2.imread(fname)
+        windows = Windows_grid(frame.shape[1], frame.shape[0])
+        total_windows, positive_windows = 0 , 0
+        start = time()
+        bounding_boxes=[]
+        for window in windows:
+            total_windows += 1
+            (x0, y0), (x1, y1) = window
+            # resize the window content as necessary
+            width = x1 - x0 + 1
+            height = y1 - y0 + 1
+            image = frame[y0:y1 + 1, x0:x1 + 1, :]  # (rows, columns)
+            if width != Params.image_width or height != Params.image_height:
+                size = width * height
+                desired_size = Params.image_width * Params.image_height
+                interpolation = cv2.INTER_AREA if desired_size < size else cv2.INTER_LINEAR
+                image = cv2.resize(image,
+                                   (Params.image_width, Params.image_height),
+                                   interpolation=interpolation)
+            features = compute_image_features(image)
+            classification = classifier.predict([features])
+            if classification[0] == Params.car_label:
+                bounding_boxes.append((x0, y0, x1, y1))
+                positive_windows +=1
+        for bbox in bounding_boxes:
+            draw_bounding_box(frame, *bbox)
+        print(fname,'estimated fps', 1/(time()-start), 'Positive windows', positive_windows,'/',total_windows)
+        base = os.path.basename(fname)
+        out_fname = 'test_images/out/'+base
+        #stripped, extension = os.path.splitext(fname)
+        #out_fname = stripped+'_out'+extension
+        cv2.imwrite(out_fname, frame)
+        '''frame = frame[:,:,::-1]
+        fig, ax = plt.subplots()
+        ax.set_title(fname)
+        plt.imshow(frame)'''
+
+    #plt.show()
 
 
 '''
@@ -209,6 +313,12 @@ Augment the training dataset (optional)
 * Print dataset stats
 * Convert every image into a vector of features
 Train the SVM
-Test the trained SVM on the test data set
-Test the trained SVM on the validation data set (optional)
+* Test the trained SVM on the validation data set
+Test the trained SVM on the test data set (optional)
+* Provide a generator for detection windows
+* Plot all the detection windows over a test image
+Load test images
+Classify the content of detection windows and report it
+Plot positive detection windows of the test images
+Save the test images
 '''
