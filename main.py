@@ -9,6 +9,7 @@ from sklearn.model_selection import train_test_split
 from sklearn import svm
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import precision_recall_fscore_support
+from sklearn.preprocessing import StandardScaler
 from skimage.feature import hog
 from prettytable import PrettyTable
 
@@ -99,6 +100,28 @@ def shuffle_and_split_dataset(dataset_x, dataset_y, training_size=.8):
     return train_x, train_y, valid_x, valid_y, test_x, test_y
 
 
+def compute_channel_feature2(channel):
+    winSize = (64, 64)
+    blockSize = (2, 2)
+    blockStride = (1, 1)
+    cellSize = (8, 8)
+    nbins = 9
+    derivAperture = 1
+    winSigma = 4.
+    histogramNormType = 0
+    L2HysThreshold = 2.0000000000000001e-01
+    gammaCorrection = 0
+    nlevels = 64
+    hog = cv2.HOGDescriptor(winSize, blockSize, blockStride, cellSize, nbins, derivAperture, winSigma,
+                            histogramNormType, L2HysThreshold, gammaCorrection, nlevels)
+    # compute(img[, winStride[, padding[, locations]]]) -> descriptors
+    winStride = (8, 8)
+    padding = (8, 8)
+    locations = ((10, 20),)
+    hist = hog.compute(channel)
+    return hist
+
+
 def compute_channel_features(channel):
     """
     Returns a Numpy array with the features (signature) for the given single-channel image
@@ -111,7 +134,7 @@ def compute_channel_features(channel):
                    pixels_per_cell=Params.hog_pixels_per_cell,
                    cells_per_block=Params.hog_cells_per_block,
                    block_norm=Params.hog_block_norm,
-                   feature_vector=True,
+                   feature_vector=False,
                    transform_sqrt=True,
                    visualise=False)
 
@@ -119,13 +142,28 @@ def compute_channel_features(channel):
     # plt.imshow(hog_image, plt.cm.gray)
     # plt.show()
 
-    return np.array(features)
+    features = features.ravel()
+
+    return features
 
 
 def compute_image_features(image):
     hls_image = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
-    features = compute_channel_features(hls_image[:, :, 1])
-    return features
+    # yuv_image = cv2.cvtColor(image, cv2.COLOR_BGR2YUV)
+    # hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    features1 = compute_channel_features(hls_image[:, :, 1])
+    # features2 = compute_channel_features(image[:, :, 1])
+    # features2 = compute_channel_features(yuv_image[:, :, 0])
+    # features = np.vstack([features1, features2]).astype(np.float64)
+    # features = np.vstack([features1]).astype(np.float64)
+    # features = compute_channel_features(hsv_image[:, :, 2])
+    # scaler = StandardScaler().fit(features)
+    # Apply the scaler
+    # scaled_features = scaler.transform(features)
+    # scaled_features = np.reshape(scaled_features, (1, -1))[0]
+    # features = np.concatenate((features1, features2))
+
+    return features1
 
 
 def fit_and_pickle_classifier(train_x, train_y, valid_x, valid_y):
@@ -159,6 +197,43 @@ def fit_and_pickle_classifier(train_x, train_y, valid_x, valid_y):
     return classifier
 
 
+class Perspective_grid:
+    def __init__(self, x_res, y_res):
+        """
+        Initialises the generator to produce detection windows on an image with the given resolution
+        """
+        self._x_res = x_res
+        self._y_res = y_res
+        self._roi = (0, self._y_res // 2), (self._x_res - 1, self._y_res - 1)
+        self._x_size = 64
+        self._y_size = 64
+        self._x_step = 16
+        self._y_step = 16
+        self._horizon = 442
+
+    def __iter__(self):
+        for enlargement in range(1, 6):
+            for row in range(-1, 2):
+                x0 = self._roi[0][0]
+                y0 = self._horizon - self._y_size // 2 + row * self._y_step * enlargement
+                x1, y1 = x0 + self._x_size * enlargement - 1, y0 + self._y_size * enlargement - 1
+                if y1 > self._roi[1][1]:
+                    continue
+                while True:
+                    # Sanity checks (sane paranoia)
+                    assert x1 - x0 + 1 == self._x_size * enlargement and y1 - y0 + 1 == self._y_size * enlargement
+                    assert x1 > x0 and y1 > y0
+                    assert x0 >= self._roi[0][0] and x0 <= self._roi[1][0]
+                    assert y0 <= self._roi[1][1]
+                    assert x1 <= self._roi[1][0]
+                    assert y1 <= self._roi[1][1]
+                    yield x0, y0, x1, y1
+                    x0 += self._x_step * enlargement
+                    x1 = x0 + self._x_size * enlargement - 1
+                    if x1 > self._roi[1][0]:
+                        break
+
+
 class Windows_grid:
     """
     Generator for detection windows in a grid.
@@ -185,7 +260,7 @@ class Windows_grid:
             x1, y1 = x0 + self._x_size * factor - 1, y0 + self._y_size * factor - 1
             return x0, y0, x1, y1
 
-        for enlargement in range(1, 4):
+        for enlargement in range(1, 5):
             x0, y0, x1, y1 = home(enlargement)
             while True:
                 # Sanity checks (sane paranoia)
@@ -196,7 +271,7 @@ class Windows_grid:
                 assert x1 <= self._roi[1][0]
                 assert y1 <= self._roi[1][1]
 
-                yield (x0, y0), (x1, y1)
+                yield x0, y0, x1, y1
                 # Slide one step to the right
                 x0 += self._x_step * enlargement
                 x1 = x0 + self._x_size * enlargement - 1
@@ -213,23 +288,82 @@ class Windows_grid:
                         break
 
 
-def draw_bounding_box(image, x0, y0, x1, y1, color = [255, 0, 0]):
+def draw_bounding_box(image, x0, y0, x1, y1, color=[255, 0, 0]):
     cv2.rectangle(image, (x0, y0), (x1, y1), color=color)
 
 
 def display_image_with_windows(image):
     # Initialize the detection windows maker
-    windows = Windows_grid(image.shape[1], image.shape[0])
+    windows = Perspective_grid(image.shape[1], image.shape[0])
 
-    color = [255, 0, 0]
+    color = [0, 255, 0]
     for window in windows:
-        draw_bounding_box(image, window[0][0], window[0][1], window[1][0], window[1][1], color)
-        color[0] = (color[0] - 64) % 256
+        draw_bounding_box(image, *window, color)
+        color[1] = (color[1] - 64) % 256
         color[2] = (color[2] + 64) % 256
 
     image = image[:, :, ::-1]
     plt.imshow(image)
     plt.show()
+
+
+def display_image_with_windows2(image):
+    # Initialize the detection windows maker
+    windows = Perspective_grid(image.shape[1], image.shape[0])
+
+    plt.subplots()
+    for size in range(1, 6):
+        image_copy = np.copy(image)
+        color = [0, 255, 0]
+        for window in windows:
+            if window[2] - window[0] + 1 == 64 * size:
+                draw_bounding_box(image_copy, *window, color)
+                color[1] = (color[1] - 64) % 256
+                color[2] = (color[2] + 64) % 256
+
+        plt.imshow(image_copy[:, :, ::-1])
+        plt.show()
+
+
+def find_bounding_boxes(frame, classifier):
+    windows = Perspective_grid(frame.shape[1], frame.shape[0])
+    total_windows, positive_windows = 0, 0
+    bounding_boxes = []
+    for window in windows:
+        total_windows += 1
+        x0, y0, x1, y1 = window
+        # resize the window content as necessary
+        width = x1 - x0 + 1
+        height = y1 - y0 + 1
+        image = frame[y0:y1 + 1, x0:x1 + 1, :]  # (rows, columns)
+        if width != Params.image_width or height != Params.image_height:
+            size = width * height
+            desired_size = Params.image_width * Params.image_height
+            interpolation = cv2.INTER_AREA if desired_size < size else cv2.INTER_LINEAR
+            image = cv2.resize(image,
+                               (Params.image_width, Params.image_height),
+                               interpolation=interpolation)
+        features = compute_image_features(image)
+        classification = classifier.predict([features])
+        if classification[0] == Params.car_label:
+            bounding_boxes.append((x0, y0, x1, y1))
+            positive_windows += 1
+    return bounding_boxes, total_windows
+
+
+def process_test_images():
+    fnames = [name for name in glob.glob('test_images/*.jpg')] + [name for name in glob.glob('test_images/*.png')]
+    for fname in fnames:
+        frame = cv2.imread(fname)
+        start = time()
+        bounding_boxes, total_windows = find_bounding_boxes(frame, classifier)
+        print(fname, 'estimated fps {:.3f}'.format(1 / (time() - start)), 'Positive windows', len(bounding_boxes), '/',
+              total_windows)
+        for bbox in bounding_boxes:
+            draw_bounding_box(frame, *bbox)
+        base = os.path.basename(fname)
+        out_fname = 'test_images/out/' + base
+        cv2.imwrite(out_fname, frame)
 
 
 if __name__ == '__main__':
@@ -260,47 +394,7 @@ if __name__ == '__main__':
             classifier = pickle.load(pickle_file)
             assert classifier is not None
 
-    # Load a test camera frame
-    for fname in glob.glob('test_images/*.jpg'):
-        frame = cv2.imread(fname)
-        windows = Windows_grid(frame.shape[1], frame.shape[0])
-        total_windows, positive_windows = 0 , 0
-        start = time()
-        bounding_boxes=[]
-        for window in windows:
-            total_windows += 1
-            (x0, y0), (x1, y1) = window
-            # resize the window content as necessary
-            width = x1 - x0 + 1
-            height = y1 - y0 + 1
-            image = frame[y0:y1 + 1, x0:x1 + 1, :]  # (rows, columns)
-            if width != Params.image_width or height != Params.image_height:
-                size = width * height
-                desired_size = Params.image_width * Params.image_height
-                interpolation = cv2.INTER_AREA if desired_size < size else cv2.INTER_LINEAR
-                image = cv2.resize(image,
-                                   (Params.image_width, Params.image_height),
-                                   interpolation=interpolation)
-            features = compute_image_features(image)
-            classification = classifier.predict([features])
-            if classification[0] == Params.car_label:
-                bounding_boxes.append((x0, y0, x1, y1))
-                positive_windows +=1
-        for bbox in bounding_boxes:
-            draw_bounding_box(frame, *bbox)
-        print(fname,'estimated fps', 1/(time()-start), 'Positive windows', positive_windows,'/',total_windows)
-        base = os.path.basename(fname)
-        out_fname = 'test_images/out/'+base
-        #stripped, extension = os.path.splitext(fname)
-        #out_fname = stripped+'_out'+extension
-        cv2.imwrite(out_fname, frame)
-        '''frame = frame[:,:,::-1]
-        fig, ax = plt.subplots()
-        ax.set_title(fname)
-        plt.imshow(frame)'''
-
-    #plt.show()
-
+    process_test_images()
 
 '''
 * Load the dataset(s)
@@ -317,8 +411,13 @@ Train the SVM
 Test the trained SVM on the test data set (optional)
 * Provide a generator for detection windows
 * Plot all the detection windows over a test image
-Load test images
-Classify the content of detection windows and report it
-Plot positive detection windows of the test images
-Save the test images
+* Load test images
+* Classify the content of detection windows and report it
+* Plot positive detection windows of the test images
+* Save the test images
+Loop over frames from video clip
+Overlay bounding boxes and save to a video clip
+Implement heat-maps
+Save a video clip with heatmaps for debugging/parameters tuning (optional)
+Refine bounding-boxes based on heat maps
 '''
