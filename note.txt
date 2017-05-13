@@ -1,0 +1,64 @@
+/usr/bin/python3.5 /home/fanta/workspace/CarND-Vehicle-Detection/main.py
+Dataset file car-no-car.p not found; making it.
+Read 11794 images, 2826 with car, and 8968 with no car
+Training dataset size 9435 , validation 1179 , test 1180
+Trained classifier file classifier.p not found; making it.
+Computed features for training and validation set in 20 s
+Trained classifier in 16 s
+Accuracy on validation set 0.977947413062
+   Table with stats on validation set.
++-------+-----------+--------+---------+---------+
+| Class | Precision | Recall | F-score | Support |
++-------+-----------+--------+---------+---------+
+|   0   |   0.974   | 0.998  |  0.986  |   894   |
+|   1   |   0.992   | 0.916  |  0.953  |   285   |
++-------+-----------+--------+---------+---------+
+OpenCV: FFMPEG: tag 0x44495658/'XVID' is not supported with codec id 13 and format 'mp4 / MP4 (MPEG-4 Part 14)'
+OpenCV: FFMPEG: fallback to use tag 0x00000020/' ???'
+Source video test_video.mp4 is at 25.00 fps with resolution of 1280x720 pixels
+Processing frame:     31
+Processing time 47 s at 0.647 fps
+
+Process finished with exit code 0
+
+
+/usr/bin/python3.5 /home/fanta/workspace/CarND-Vehicle-Detection/main.py
+Dataset file car-no-car.p not found; making it.
+Read 11794 images, 2826 with car, and 8968 with no car
+Training dataset size 10614 , validation 1180 , test 0
+Trained classifier file classifier.p not found; making it.
+Computed features for training and validation set in 22 s
+Trained classifier in 20 s
+Accuracy on validation set 0.974576271186
+   Table with stats on validation set.
++-------+-----------+--------+---------+---------+
+| Class | Precision | Recall | F-score | Support |
++-------+-----------+--------+---------+---------+
+|   0   |   0.973   | 0.994  |  0.983  |   894   |
+|   1   |   0.981   | 0.913  |  0.946  |   286   |
++-------+-----------+--------+---------+---------+
+test_images/test3.jpg estimated fps 0.595 Positive windows 3 / 458
+test_images/test2.jpg estimated fps 0.596 Positive windows 0 / 458
+test_images/vlcsnap-2017-05-12-16h31m25s691.jpg estimated fps 0.604 Positive windows 13 / 458
+test_images/test8.jpg estimated fps 0.622 Positive windows 8 / 458
+test_images/vlcsnap-2017-05-12-16h31m42s458.jpg estimated fps 0.592 Positive windows 7 / 458
+test_images/vlcsnap-2017-05-12-16h32m04s428.jpg estimated fps 0.593 Positive windows 2 / 458
+test_images/test6.jpg estimated fps 0.593 Positive windows 10 / 458
+test_images/test4.jpg estimated fps 0.592 Positive windows 10 / 458
+test_images/test1.jpg estimated fps 0.579 Positive windows 10 / 458
+test_images/test5.jpg estimated fps 0.593 Positive windows 11 / 458
+test_images/vlcsnap-2017-05-12-18h05m04s836.png estimated fps 0.602 Positive windows 5 / 458
+test_images/vlcsnap-2017-05-12-17h56m42s331.png estimated fps 0.593 Positive windows 13 / 458
+test_images/vlcsnap-2017-05-12-17h56m01s792.png estimated fps 0.592 Positive windows 4 / 458
+test_images/vlcsnap-2017-05-12-17h56m19s895.png estimated fps 0.595 Positive windows 7 / 458
+test_images/vlcsnap-2017-05-12-17h56m33s670.png estimated fps 0.596 Positive windows 4 / 458
+test_images/vlcsnap-2017-05-12-18h04m52s132.png estimated fps 0.579 Positive windows 8 / 458
+test_images/vlcsnap-2017-05-12-18h04m16s071.png estimated fps 0.596 Positive windows 1 / 458
+test_images/vlcsnap-2017-05-12-17h57m25s122.png estimated fps 0.595 Positive windows 8 / 458
+test_images/vlcsnap-2017-05-12-17h56m53s776.png estimated fps 0.595 Positive windows 13 / 458
+test_images/vlcsnap-2017-05-12-18h05m22s647.png estimated fps 0.595 Positive windows 10 / 458
+test_images/vlcsnap-2017-05-12-18h05m49s582.png estimated fps 0.595 Positive windows 5 / 458
+
+Process finished with exit code 0
+
+

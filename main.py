@@ -2,6 +2,7 @@ import os
 import cv2
 import pickle
 import glob
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from time import time
@@ -10,7 +11,9 @@ from sklearn import svm
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import precision_recall_fscore_support
 from sklearn.preprocessing import StandardScaler
+from sklearn.utils import shuffle
 from skimage.feature import hog
+from scipy.ndimage.measurements import label
 from prettytable import PrettyTable
 
 
@@ -43,7 +46,7 @@ def format_image(image):
     return image
 
 
-def load_and_pickle_datasets():
+def load_and_pickle_datasets(augment = False):
     """
     Loads the datasets, converts their images to the desired size and format, assembles them in one big
     dataset and saves it in a pickled file before returning it.
@@ -71,13 +74,19 @@ def load_and_pickle_datasets():
             assert image is not None
             image = format_image(image)
             dataset_x.append(image)
-            dataset_y.append(Params.car_label if y == 1 else Params.non_car_label)
+            label = Params.car_label if y == 1 else Params.non_car_label
+            dataset_y.append(label)
+            if augment:
+                flipped = np.fliplr(image)
+                dataset_x.append(flipped)
+                dataset_y.append(label)
 
+    dataset_x, dataset_y = shuffle(dataset_x, dataset_y, random_state = Params.random_seed)
     pickle.dump((dataset_x, dataset_y), open(Params.pickled_dataset, "wb"))
     return dataset_x, dataset_y
 
 
-def shuffle_and_split_dataset(dataset_x, dataset_y, training_size=.8):
+def shuffle_and_split_dataset(dataset_x, dataset_y, training_size=.9):
     """
     Splits randomly the given dataset between a training, validation and test sets. 
     :param dataset_x: the dataset data.
@@ -88,43 +97,22 @@ def shuffle_and_split_dataset(dataset_x, dataset_y, training_size=.8):
     """
 
     assert 0 < training_size < 1
-    train_x, test_x, train_y, test_y = train_test_split(dataset_x,
+    train_x, valid_x, train_y, valid_y = train_test_split(dataset_x,
                                                         dataset_y,
                                                         random_state=Params.random_seed,
                                                         test_size=1 - training_size)
-    valid_size = len(test_y) // 2
+    '''valid_size = len(test_y) // 2
     valid_x = test_x[0:valid_size]
     valid_y = test_y[0:valid_size]
     test_x = test_x[valid_size:]
-    test_y = test_y[valid_size:]
+    test_y = test_y[valid_size:]'''
+    test_x, test_y = [], []
     return train_x, train_y, valid_x, valid_y, test_x, test_y
-
-
-def compute_channel_feature2(channel):
-    winSize = (64, 64)
-    blockSize = (2, 2)
-    blockStride = (1, 1)
-    cellSize = (8, 8)
-    nbins = 9
-    derivAperture = 1
-    winSigma = 4.
-    histogramNormType = 0
-    L2HysThreshold = 2.0000000000000001e-01
-    gammaCorrection = 0
-    nlevels = 64
-    hog = cv2.HOGDescriptor(winSize, blockSize, blockStride, cellSize, nbins, derivAperture, winSigma,
-                            histogramNormType, L2HysThreshold, gammaCorrection, nlevels)
-    # compute(img[, winStride[, padding[, locations]]]) -> descriptors
-    winStride = (8, 8)
-    padding = (8, 8)
-    locations = ((10, 20),)
-    hist = hog.compute(channel)
-    return hist
 
 
 def compute_channel_features(channel):
     """
-    Returns a Numpy array with the features (signature) for the given single-channel image
+    Returns a Numpy array with the unscaled features (signature) for the given single-channel image
     """
 
     ''' Note: hog() can take as input a grayscale image with integer pixels values in [0, 255], and returns a signature
@@ -134,49 +122,52 @@ def compute_channel_features(channel):
                    pixels_per_cell=Params.hog_pixels_per_cell,
                    cells_per_block=Params.hog_cells_per_block,
                    block_norm=Params.hog_block_norm,
-                   feature_vector=False,
+                   feature_vector=True,
                    transform_sqrt=True,
                    visualise=False)
-
-    # hog_image_rescaled = exposure.rescale_intensity(hog_image, in_range=(0, 0.02))
-    # plt.imshow(hog_image, plt.cm.gray)
-    # plt.show()
-
-    features = features.ravel()
 
     return features
 
 
 def compute_image_features(image):
+    """
+    Computes and returs as a Numpy array the unscaled features vector for the given image 
+    """
     hls_image = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
-    # yuv_image = cv2.cvtColor(image, cv2.COLOR_BGR2YUV)
-    # hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    features1 = compute_channel_features(hls_image[:, :, 1])
-    # features2 = compute_channel_features(image[:, :, 1])
-    # features2 = compute_channel_features(yuv_image[:, :, 0])
-    # features = np.vstack([features1, features2]).astype(np.float64)
-    # features = np.vstack([features1]).astype(np.float64)
-    # features = compute_channel_features(hsv_image[:, :, 2])
-    # scaler = StandardScaler().fit(features)
-    # Apply the scaler
-    # scaled_features = scaler.transform(features)
-    # scaled_features = np.reshape(scaled_features, (1, -1))[0]
-    # features = np.concatenate((features1, features2))
-
-    return features1
+    features = compute_channel_features(hls_image[:, :, 1])
+    return features
 
 
-def fit_and_pickle_classifier(train_x, train_y, valid_x, valid_y):
+def fit_and_pickle_classifier(train_x, train_y, valid_x, valid_y, scale=False):
+    """
+    Instantiates, trains and validates a SVM classifier on the given datasets, after optionally scaling them. The
+    trained classifier and data scaler are saved in a pickled file. The method also prints validation statistics.
+    :param train_x: the training dataset 
+    :param train_y: labels for the training dataset
+    :param valid_x: the validation dataset
+    :param valid_y: labels for the validation datase
+    :param scale: if set to True, a np.StandardScaler is used to scale datasets before training and validation, and the
+    scaler is saved in the pickled file; otherwise `None` is saved in the pickled file as scaler
+    :return: the pair (classifier, scaler), where `scaler` is `None` if parameter `scale` was set to False. 
+    """
     start = time()
     train_feat_x = [compute_image_features(image) for image in train_x]
     valid_feat_x = [compute_image_features(image) for image in valid_x]
+    if scale:
+        scaler = StandardScaler()
+        scaler.fit(train_feat_x)
+        train_feat_x = scaler.transform(train_feat_x)
+        valid_feat_x = scaler.transform(valid_feat_x)
+    else:
+        scaler = None
     print('Computed features for training and validation set in', round(time() - start), 's')
 
     start = time()
     classifier = svm.SVC(kernel='linear', C=.1)
     classifier = classifier.fit(train_feat_x, train_y)
     print('Trained classifier in', round(time() - start), 's')
-    pickle.dump(classifier, open(Params.pickled_classifier, "wb"))
+    pickle_me={'classifier': classifier, 'scaler': scaler}
+    pickle.dump(pickle_me, open(Params.pickled_classifier, "wb"))
 
     valid_prediction = classifier.predict(valid_feat_x)
     valid_accuracy = accuracy_score(valid_prediction, valid_y)
@@ -194,10 +185,14 @@ def fit_and_pickle_classifier(train_x, train_y, valid_x, valid_y):
                    '{:.3f}'.format(item[3]),
                    '{}'.format(item[4])])
     print(t)
-    return classifier
+    return classifier, scaler
 
 
 class Perspective_grid:
+    """
+    Generator for detection windows that are smaller close to the horizon, and larger close to the bottom of the image.
+    """
+
     def __init__(self, x_res, y_res):
         """
         Initialises the generator to produce detection windows on an image with the given resolution
@@ -214,6 +209,8 @@ class Perspective_grid:
     def __iter__(self):
         for enlargement in range(1, 6):
             for row in range(-1, 2):
+                if enlargement == 1 and row ==-1:
+                    continue
                 x0 = self._roi[0][0]
                 y0 = self._horizon - self._y_size // 2 + row * self._y_step * enlargement
                 x1, y1 = x0 + self._x_size * enlargement - 1, y0 + self._y_size * enlargement - 1
@@ -289,6 +286,9 @@ class Windows_grid:
 
 
 def draw_bounding_box(image, x0, y0, x1, y1, color=[255, 0, 0]):
+    """
+    Draws over the given image a rectangle with the given end-points coordinates and color.
+    """
     cv2.rectangle(image, (x0, y0), (x1, y1), color=color)
 
 
@@ -325,7 +325,16 @@ def display_image_with_windows2(image):
         plt.show()
 
 
-def find_bounding_boxes(frame, classifier):
+def find_bounding_boxes(frame, classifier, scaler):
+    """
+    Find cars bounding boxes in the given camera frame.
+    :param frame: the camera frame to be processed.
+    :param classifier: the classifier to be used to detect cars in sliding windows.
+    :param scaler: the scaler (np.StandardScaler) to be applied to features extracted from sliding windows before
+     classification; if set to None, no scaling is applied.
+    :return: a pair (bounding_boxes, total_windows) where `bounding_boxes` is the list of found bounding boxes, and
+      `total_windows` is the count 
+    """
     windows = Perspective_grid(frame.shape[1], frame.shape[0])
     total_windows, positive_windows = 0, 0
     bounding_boxes = []
@@ -344,6 +353,9 @@ def find_bounding_boxes(frame, classifier):
                                (Params.image_width, Params.image_height),
                                interpolation=interpolation)
         features = compute_image_features(image)
+        if scaler is not None:
+            features = scaler.transform([features])
+            features = np.squeeze(features)
         classification = classifier.predict([features])
         if classification[0] == Params.car_label:
             bounding_boxes.append((x0, y0, x1, y1))
@@ -351,12 +363,12 @@ def find_bounding_boxes(frame, classifier):
     return bounding_boxes, total_windows
 
 
-def process_test_images():
+def process_test_images(classifier, scaler):
     fnames = [name for name in glob.glob('test_images/*.jpg')] + [name for name in glob.glob('test_images/*.png')]
     for fname in fnames:
         frame = cv2.imread(fname)
         start = time()
-        bounding_boxes, total_windows = find_bounding_boxes(frame, classifier)
+        bounding_boxes, total_windows = find_bounding_boxes(frame, classifier, scaler)
         print(fname, 'estimated fps {:.3f}'.format(1 / (time() - start)), 'Positive windows', len(bounding_boxes), '/',
               total_windows)
         for bbox in bounding_boxes:
@@ -366,12 +378,40 @@ def process_test_images():
         cv2.imwrite(out_fname, frame)
 
 
+def update_heat_map(heat_map, bounding_boxes):
+    heat = 2
+    cool = 1
+    threshold =4
+    for bbox in bounding_boxes:
+        x0, y0, x1, y1 = bbox
+        heat_map[y0:y1, x0:x1] += heat
+    heat_map[heat_map >= cool] -= cool
+    thresholded = np.copy(heat_map)
+    thresholded[heat_map<=threshold] = 0
+    return heat_map
+
+
+def draw_labeled_bounding_boxes(frame, labels):
+    # Iterate through all detected cars
+    for car_number in range(1, labels[1] + 1):
+        # Find pixels with each car_number label value
+        nonzero = (labels[0] == car_number).nonzero()
+        # Identify x and y values of those pixels
+        nonzeroy = np.array(nonzero[0])
+        nonzerox = np.array(nonzero[1])
+        # Define a bounding box based on min/max x and y
+        bbox = ((np.min(nonzerox), np.min(nonzeroy)), (np.max(nonzerox), np.max(nonzeroy)))
+        # Draw the box on the image
+        cv2.rectangle(frame, bbox[0], bbox[1], (0, 0, 255), 6)
+        # Return the image
+        return frame
+
 if __name__ == '__main__':
 
     # Read the dataset (and save it pickled, if not done already)
     if not os.path.isfile(Params.pickled_dataset):
         print('Dataset file', Params.pickled_dataset, 'not found; making it.')
-        dataset_x, dataset_y = load_and_pickle_datasets()
+        dataset_x, dataset_y = load_and_pickle_datasets(augment=False)
     else:
         with open(Params.pickled_dataset, mode='rb') as pickle_file:
             print('Loading dataset from file', Params.pickled_dataset)
@@ -387,14 +427,59 @@ if __name__ == '__main__':
 
     if not os.path.isfile(Params.pickled_classifier):
         print('Trained classifier file', Params.pickled_classifier, 'not found; making it.')
-        classifier = fit_and_pickle_classifier(train_x, train_y, valid_x, valid_y)
+        classifier, scaler = fit_and_pickle_classifier(train_x, train_y, valid_x, valid_y, scale=False)
     else:
         with open(Params.pickled_classifier, mode='rb') as pickle_file:
             print('Loading trained classifier from file', Params.pickled_classifier)
-            classifier = pickle.load(pickle_file)
-            assert classifier is not None
+            from_pickle = pickle.load(pickle_file)
+            classifier = from_pickle['classifier']
+            scaler = from_pickle['scaler']
 
-    process_test_images()
+    process_test_images(classifier, scaler)
+    exit(0)
+
+    input_fname = 'test_video.mp4'
+    vidcap = cv2.VideoCapture(input_fname)
+    assert vidcap is not None
+    fps = vidcap.get(cv2.CAP_PROP_FPS)
+    assert fps > 0
+    vertical_resolution = int(vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    horizontal_resolution = int(vidcap.get(cv2.CAP_PROP_FRAME_WIDTH))
+
+    # Open the output video stream
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    vidwrite = cv2.VideoWriter('test_video-out.mp4', fourcc=fourcc, fps=fps,
+                               frameSize=(horizontal_resolution, vertical_resolution))
+
+    print('Source video {} is at {:.2f} fps with resolution of {}x{} pixels'.format(input_fname,
+                                                                                    fps,
+                                                                                    int(horizontal_resolution),
+                                                                                    int(vertical_resolution)))
+    heat_map = np.zeros((vertical_resolution, horizontal_resolution), dtype=np.uint8)
+    frame_counter = 0
+    start_time = time()
+    # Main loop, process one frame at a time from the input video stream and send the result to the output stream
+    while (True):
+        read, frame = vidcap.read()
+        if not read:
+            break
+        frame_counter += 1
+        sys.stdout.write("\rProcessing frame: {0:>6}".format(frame_counter))
+        sys.stdout.flush()
+        bounding_boxes, total_windows = find_bounding_boxes(frame, classifier, scaler)
+        for bbox in bounding_boxes:
+            draw_bounding_box(frame, *bbox)
+        heat_map= update_heat_map(heat_map, bounding_boxes)
+        labels = label(heat_map)
+        frame = draw_labeled_bounding_boxes(frame, labels)
+        # color_map = cv2.merge((heat_map, heat_map, heat_map))
+
+        vidwrite.write(frame)
+
+    elapsed = time()-start_time
+    print('\nProcessing time',int(elapsed),'s at {:.3f}'.format(frame_counter/elapsed), 'fps')
+
+
 
 '''
 * Load the dataset(s)
@@ -415,8 +500,8 @@ Test the trained SVM on the test data set (optional)
 * Classify the content of detection windows and report it
 * Plot positive detection windows of the test images
 * Save the test images
-Loop over frames from video clip
-Overlay bounding boxes and save to a video clip
+* Loop over frames from video clip
+* Overlay bounding boxes and save to a video clip
 Implement heat-maps
 Save a video clip with heatmaps for debugging/parameters tuning (optional)
 Refine bounding-boxes based on heat maps
