@@ -61,4 +61,48 @@ test_images/vlcsnap-2017-05-12-18h05m49s582.png estimated fps 0.595 Positive win
 
 Process finished with exit code 0
 
+After OpenCV HOG introduction:
+******************************
+
+/usr/bin/python3.5 /home/fanta/workspace/CarND-Vehicle-Detection/main.py
+Loading dataset from file car-no-car.p
+Read 11794 images, 2826 with car, and 8968 with no car
+Training dataset size 10614 , validation 1180 , test 0
+Trained classifier file classifier.p not found; making it.
+Computed features for training and validation set in 2 s
+Trained classifier in 20 s
+Accuracy on validation set 0.975423728814
+   Table with stats on validation set.
++-------+-----------+--------+---------+---------+
+| Class | Precision | Recall | F-score | Support |
++-------+-----------+--------+---------+---------+
+|   0   |   0.972   | 0.997  |  0.984  |   902   |
+|   1   |   0.988   | 0.906  |  0.946  |   278   |
++-------+-----------+--------+---------+---------+
+test_images/test3.jpg estimated fps 1.283 Positive windows 8 / 381
+test_images/test2.jpg estimated fps 1.281 Positive windows 2 / 381
+test_images/vlcsnap-2017-05-12-16h31m25s691.jpg estimated fps 1.281 Positive windows 17 / 381
+test_images/test8.jpg estimated fps 1.282 Positive windows 4 / 381
+test_images/vlcsnap-2017-05-12-16h31m42s458.jpg estimated fps 1.200 Positive windows 5 / 381
+test_images/vlcsnap-2017-05-12-16h32m04s428.jpg estimated fps 1.242 Positive windows 4 / 381
+test_images/test6.jpg estimated fps 1.280 Positive windows 8 / 381
+test_images/test4.jpg estimated fps 1.280 Positive windows 6 / 381
+test_images/test1.jpg estimated fps 1.282 Positive windows 6 / 381
+test_images/test5.jpg estimated fps 1.281 Positive windows 9 / 381
+test_images/vlcsnap-2017-05-12-18h05m04s836.png estimated fps 1.251 Positive windows 16 / 381
+test_images/vlcsnap-2017-05-12-17h56m42s331.png estimated fps 1.253 Positive windows 5 / 381
+test_images/vlcsnap-2017-05-12-17h56m01s792.png estimated fps 1.272 Positive windows 7 / 381
+test_images/vlcsnap-2017-05-12-17h56m19s895.png estimated fps 1.272 Positive windows 5 / 381
+test_images/vlcsnap-2017-05-12-17h56m33s670.png estimated fps 1.278 Positive windows 3 / 381
+test_images/vlcsnap-2017-05-12-18h04m52s132.png estimated fps 1.281 Positive windows 11 / 381
+test_images/vlcsnap-2017-05-12-18h04m16s071.png estimated fps 1.277 Positive windows 4 / 381
+test_images/vlcsnap-2017-05-12-17h57m25s122.png estimated fps 1.266 Positive windows 11 / 381
+test_images/vlcsnap-2017-05-12-17h56m53s776.png estimated fps 1.281 Positive windows 14 / 381
+test_images/vlcsnap-2017-05-12-18h05m22s647.png estimated fps 1.282 Positive windows 6 / 381
+test_images/vlcsnap-2017-05-12-18h05m49s582.png estimated fps 1.263 Positive windows 4 / 381
+
+Process finished with exit code 0
+
+
+
 

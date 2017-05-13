@@ -34,6 +34,28 @@ class Params:
     hog_pixels_per_cell = (8, 8)  # Cell size for HOG
     hog_cells_per_block = (2, 2)  # Block size for HOG
     hog_block_norm = 'L2'  # Norm used for HOG
+    scale_features = False  # If True, features are scaled to 0 mean and variance=1 before classification
+    augment_dataset = False  # If True, dataset is augmented before cliassifier training
+    SVM_C = .1  # C parameter for SVM classifier
+
+
+descriptor = None
+
+
+def get_hog_descriptor():
+    global descriptor
+
+    if descriptor is None:
+        block_size = tuple(np.array(Params.hog_pixels_per_cell) * np.array(Params.hog_cells_per_block))
+        descriptor = cv2.HOGDescriptor(_winSize=(Params.image_width, Params.image_height),
+                                       _blockSize=block_size,
+                                       _blockStride=Params.hog_pixels_per_cell,
+                                       _cellSize=Params.hog_pixels_per_cell,
+                                       _nbins=9,
+                                       _gammaCorrection=True,
+                                       _signedGradient=True)
+
+    return descriptor
 
 
 def format_image(image):
@@ -46,7 +68,7 @@ def format_image(image):
     return image
 
 
-def load_and_pickle_datasets(augment = False):
+def load_and_pickle_datasets(augment=False):
     """
     Loads the datasets, converts their images to the desired size and format, assembles them in one big
     dataset and saves it in a pickled file before returning it.
@@ -57,11 +79,12 @@ def load_and_pickle_datasets(augment = False):
                'vehicles/GTI_MiddleClose',
                'vehicles/GTI_Right',
                'non-vehicles/Extras',
-               'non-vehicles/GTI']
+               'non-vehicles/GTI',
+               'non-vehicles-additional']
 
     ''' 1 if the corresponding element in `subdirs` is a directory with car images, 0 if it is a directory with non-car
     images '''
-    subdirs_y = [1, 1, 1, 1, 0, 0]
+    subdirs_y = [1, 1, 1, 1, 0, 0, 0]
 
     dataset_x, dataset_y = [], []
     for subdir, y in zip(subdirs, subdirs_y):
@@ -81,7 +104,7 @@ def load_and_pickle_datasets(augment = False):
                 dataset_x.append(flipped)
                 dataset_y.append(label)
 
-    dataset_x, dataset_y = shuffle(dataset_x, dataset_y, random_state = Params.random_seed)
+    dataset_x, dataset_y = shuffle(dataset_x, dataset_y, random_state=Params.random_seed)
     pickle.dump((dataset_x, dataset_y), open(Params.pickled_dataset, "wb"))
     return dataset_x, dataset_y
 
@@ -98,9 +121,9 @@ def shuffle_and_split_dataset(dataset_x, dataset_y, training_size=.9):
 
     assert 0 < training_size < 1
     train_x, valid_x, train_y, valid_y = train_test_split(dataset_x,
-                                                        dataset_y,
-                                                        random_state=Params.random_seed,
-                                                        test_size=1 - training_size)
+                                                          dataset_y,
+                                                          random_state=Params.random_seed,
+                                                          test_size=1 - training_size)
     '''valid_size = len(test_y) // 2
     valid_x = test_x[0:valid_size]
     valid_y = test_y[0:valid_size]
@@ -110,7 +133,7 @@ def shuffle_and_split_dataset(dataset_x, dataset_y, training_size=.9):
     return train_x, train_y, valid_x, valid_y, test_x, test_y
 
 
-def compute_channel_features(channel):
+def compute_hog_features2(channel):
     """
     Returns a Numpy array with the unscaled features (signature) for the given single-channel image
     """
@@ -129,12 +152,33 @@ def compute_channel_features(channel):
     return features
 
 
+def compute_hog_features(channel):
+    descriptor = get_hog_descriptor()
+    features = descriptor.compute(channel)[:, 0]
+    return features
+
+
+def compute_histogram_features(channel):
+    features, _ = np.histogram(channel, bins=16, range=(0, 256))
+    return features
+
+
 def compute_image_features(image):
     """
     Computes and returs as a Numpy array the unscaled features vector for the given image 
     """
     hls_image = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
-    features = compute_channel_features(hls_image[:, :, 1])
+    features = compute_hog_features(hls_image[:, :, 1])
+    return features
+
+
+def compute_image_features2(image):
+    """
+    Computes and returs as a Numpy array the unscaled features vector for the given image 
+    """
+    hls_image = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    descriptor = get_hog_descriptor()
+    features = descriptor.compute(hls_image)[:,0]
     return features
 
 
@@ -163,10 +207,10 @@ def fit_and_pickle_classifier(train_x, train_y, valid_x, valid_y, scale=False):
     print('Computed features for training and validation set in', round(time() - start), 's')
 
     start = time()
-    classifier = svm.SVC(kernel='linear', C=.1)
+    classifier = svm.SVC(kernel='linear', C=Params.SVM_C)
     classifier = classifier.fit(train_feat_x, train_y)
     print('Trained classifier in', round(time() - start), 's')
-    pickle_me={'classifier': classifier, 'scaler': scaler}
+    pickle_me = {'classifier': classifier, 'scaler': scaler}
     pickle.dump(pickle_me, open(Params.pickled_classifier, "wb"))
 
     valid_prediction = classifier.predict(valid_feat_x)
@@ -209,7 +253,7 @@ class Perspective_grid:
     def __iter__(self):
         for enlargement in range(1, 6):
             for row in range(-1, 2):
-                if enlargement == 1 and row ==-1:
+                if enlargement == 1 and row == -1:
                     continue
                 x0 = self._roi[0][0]
                 y0 = self._horizon - self._y_size // 2 + row * self._y_step * enlargement
@@ -381,13 +425,13 @@ def process_test_images(classifier, scaler):
 def update_heat_map(heat_map, bounding_boxes):
     heat = 2
     cool = 1
-    threshold =4
+    threshold = 4
     for bbox in bounding_boxes:
         x0, y0, x1, y1 = bbox
         heat_map[y0:y1, x0:x1] += heat
     heat_map[heat_map >= cool] -= cool
     thresholded = np.copy(heat_map)
-    thresholded[heat_map<=threshold] = 0
+    thresholded[heat_map <= threshold] = 0
     return heat_map
 
 
@@ -406,12 +450,13 @@ def draw_labeled_bounding_boxes(frame, labels):
         # Return the image
         return frame
 
+
 if __name__ == '__main__':
 
     # Read the dataset (and save it pickled, if not done already)
     if not os.path.isfile(Params.pickled_dataset):
         print('Dataset file', Params.pickled_dataset, 'not found; making it.')
-        dataset_x, dataset_y = load_and_pickle_datasets(augment=False)
+        dataset_x, dataset_y = load_and_pickle_datasets(augment=Params.augment_dataset)
     else:
         with open(Params.pickled_dataset, mode='rb') as pickle_file:
             print('Loading dataset from file', Params.pickled_dataset)
@@ -427,7 +472,7 @@ if __name__ == '__main__':
 
     if not os.path.isfile(Params.pickled_classifier):
         print('Trained classifier file', Params.pickled_classifier, 'not found; making it.')
-        classifier, scaler = fit_and_pickle_classifier(train_x, train_y, valid_x, valid_y, scale=False)
+        classifier, scaler = fit_and_pickle_classifier(train_x, train_y, valid_x, valid_y, scale=Params.scale_features)
     else:
         with open(Params.pickled_classifier, mode='rb') as pickle_file:
             print('Loading trained classifier from file', Params.pickled_classifier)
@@ -469,17 +514,15 @@ if __name__ == '__main__':
         bounding_boxes, total_windows = find_bounding_boxes(frame, classifier, scaler)
         for bbox in bounding_boxes:
             draw_bounding_box(frame, *bbox)
-        heat_map= update_heat_map(heat_map, bounding_boxes)
+        heat_map = update_heat_map(heat_map, bounding_boxes)
         labels = label(heat_map)
         frame = draw_labeled_bounding_boxes(frame, labels)
         # color_map = cv2.merge((heat_map, heat_map, heat_map))
 
         vidwrite.write(frame)
 
-    elapsed = time()-start_time
-    print('\nProcessing time',int(elapsed),'s at {:.3f}'.format(frame_counter/elapsed), 'fps')
-
-
+    elapsed = time() - start_time
+    print('\nProcessing time', int(elapsed), 's at {:.3f}'.format(frame_counter / elapsed), 'fps')
 
 '''
 * Load the dataset(s)
