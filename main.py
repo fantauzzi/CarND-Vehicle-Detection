@@ -30,13 +30,13 @@ class Params:
     random_seed = 42  # Answer to the Ultimate Question of Life, the Universe, and Everything
     car_label = 1  # Label for a car image
     non_car_label = 0  # Label for a non-car image
-    hog_orientations = 9  # Number of bins in HOG
+    hog_orientations = 11  # Number of bins in HOG
     hog_pixels_per_cell = (8, 8)  # Cell size for HOG
     hog_cells_per_block = (2, 2)  # Block size for HOG
     hog_block_norm = 'L2'  # Norm used for HOG
-    scale_features = True  # If True, features are scaled to 0 mean and variance=1 before classification
+    scale_features = False  # If True, features are scaled to 0 mean and variance=1 before classification
     augment_dataset = False  # If True, dataset is augmented before cliassifier training
-    SVM_C = .1  # C parameter for SVM classifier
+    SVM_C = .5  # C parameter for SVM classifier
 
 
 descriptor = None
@@ -158,8 +158,14 @@ def compute_hog_features(channel):
     return features
 
 
-def compute_histogram_features(channel):
-    features, _ = np.histogram(channel, bins=16)
+def compute_histogram_features(image, channels, upper_bounds=None):
+    if upper_bounds is None:
+        upper_bounds = [255]*len(channels)
+    features = []
+    for channel, upper_bound in zip(channels, upper_bounds):
+        channel_features, _ = np.histogram(image[:, :, channel], bins=32, range=(0, upper_bound))
+        features.append(channel_features)
+    features = np.concatenate(features)
     return features
 
 
@@ -167,14 +173,11 @@ def compute_image_features(image):
     """
     Computes and returs as a Numpy array the unscaled features vector for the given image 
     """
-    hls_image = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
-    features1 = compute_hog_features(hls_image[:, :, 1])
-    '''for channel in range(3):
-        features.append(compute_histogram_features(image[:, :, channel]))'''
-    features2=compute_hog_features(image)
-    features = np.concatenate((features1, features2))
-    return features
-
+    image2 = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    features1 = compute_hog_features(image2[:,:,2])
+    # features2= compute_histogram_features(image, [0,1,2])
+    # features = np.concatenate((features1, features2))
+    return features1
 
 def compute_image_features2(image):
     """
@@ -211,7 +214,8 @@ def fit_and_pickle_classifier(train_x, train_y, valid_x, valid_y, scale=False):
     print('Computed features for training and validation set in', round(time() - start), 's')
 
     start = time()
-    classifier = svm.SVC(kernel='linear', C=Params.SVM_C)
+    # classifier = svm.SVC(kernel='linear', C=Params.SVM_C)
+    classifier = svm.LinearSVC(C=Params.SVM_C)
     classifier = classifier.fit(train_feat_x, train_y)
     print('Trained classifier in', round(time() - start), 's')
     pickle_me = {'classifier': classifier, 'scaler': scaler}
@@ -255,7 +259,7 @@ class Perspective_grid:
         self._horizon = 442
 
     def __iter__(self):
-        for enlargement in range(1, 6):
+        for enlargement in range(1, 4):
             for row in range(-1, 3):
                 if enlargement == 1 and row == -1:
                     continue
@@ -500,7 +504,7 @@ if __name__ == '__main__':
 
     # Open the output video stream
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    vidwrite = cv2.VideoWriter('project_video-hm.mp4', fourcc=fourcc, fps=fps,
+    vidwrite = cv2.VideoWriter('project_video-out2.mp4', fourcc=fourcc, fps=fps,
                                frameSize=(horizontal_resolution, vertical_resolution))
 
     print('Source video {} is at {:.2f} fps with resolution of {}x{} pixels'.format(input_fname,
@@ -511,6 +515,7 @@ if __name__ == '__main__':
     frame_counter = 0
     start_time = time()
     # Main loop, process one frame at a time from the input video stream and send the result to the output stream
+    snap_counter = 0
     while (True):
         read, frame = vidcap.read()
         if not read:
@@ -519,12 +524,26 @@ if __name__ == '__main__':
         sys.stdout.write("\rProcessing frame: {0:>6}".format(frame_counter))
         sys.stdout.flush()
         bounding_boxes, total_windows = find_bounding_boxes(frame, classifier, scaler)
+        '''
+        for bbox in bounding_boxes:
+            x0, y0, x1, y1 = bbox
+            if x0 >= 287 and x0 <=800:
+                snap = frame[y0:y1+1,x0:x1+1,:]
+                assert snap.shape[0] % 64 == 0 and snap.shape[1] % 64 == 0
+                if snap.shape[0] > 64:
+                    snap= cv2.resize(snap, (64, 64), interpolation=cv2.INTER_AREA)
+                snap_fname='snap{:05d}.png'.format(snap_counter)
+                cv2.imwrite(snap_fname, snap)
+                snap_counter+=1'''
+
         for bbox in bounding_boxes:
             draw_bounding_box(frame, *bbox)
         heat_map = update_heat_map(heat_map, bounding_boxes)
         labels = label(heat_map)
-        frame = draw_labeled_bounding_boxes(frame, labels)
-        color_map = cv2.merge((heat_map, heat_map, heat_map))
+        # frame_with_boxes = draw_labeled_bounding_boxes(frame, labels)
+        zeros = np.zeros_like(heat_map)
+        color_map = cv2.merge((zeros, zeros, heat_map))
+        color_map = cv2.add(color_map, frame)
 
         # vidwrite.write(frame)
         vidwrite.write(color_map)
