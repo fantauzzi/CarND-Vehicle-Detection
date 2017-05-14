@@ -36,7 +36,7 @@ image = cv2.imread(fname)
 
 base_size = 64
 step = base_size // 4
-enlargements = range(1, 5)
+enlargements = range(1, 6)
 
 
 def cutouts():

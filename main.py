@@ -34,7 +34,7 @@ class Params:
     hog_pixels_per_cell = (8, 8)  # Cell size for HOG
     hog_cells_per_block = (2, 2)  # Block size for HOG
     hog_block_norm = 'L2'  # Norm used for HOG
-    scale_features = False  # If True, features are scaled to 0 mean and variance=1 before classification
+    scale_features = True  # If True, features are scaled to 0 mean and variance=1 before classification
     augment_dataset = False  # If True, dataset is augmented before cliassifier training
     SVM_C = .1  # C parameter for SVM classifier
 
@@ -159,7 +159,7 @@ def compute_hog_features(channel):
 
 
 def compute_histogram_features(channel):
-    features, _ = np.histogram(channel, bins=16, range=(0, 256))
+    features, _ = np.histogram(channel, bins=16)
     return features
 
 
@@ -168,7 +168,11 @@ def compute_image_features(image):
     Computes and returs as a Numpy array the unscaled features vector for the given image 
     """
     hls_image = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
-    features = compute_hog_features(hls_image[:, :, 1])
+    features1 = compute_hog_features(hls_image[:, :, 1])
+    '''for channel in range(3):
+        features.append(compute_histogram_features(image[:, :, channel]))'''
+    features2=compute_hog_features(image)
+    features = np.concatenate((features1, features2))
     return features
 
 
@@ -178,7 +182,7 @@ def compute_image_features2(image):
     """
     hls_image = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
     descriptor = get_hog_descriptor()
-    features = descriptor.compute(hls_image)[:,0]
+    features = descriptor.compute(hls_image)[:, 0]
     return features
 
 
@@ -252,7 +256,7 @@ class Perspective_grid:
 
     def __iter__(self):
         for enlargement in range(1, 6):
-            for row in range(-1, 2):
+            for row in range(-1, 3):
                 if enlargement == 1 and row == -1:
                     continue
                 x0 = self._roi[0][0]
@@ -480,10 +484,13 @@ if __name__ == '__main__':
             classifier = from_pickle['classifier']
             scaler = from_pickle['scaler']
 
-    process_test_images(classifier, scaler)
-    exit(0)
+    # img= cv2.imread('test_images/test6.jpg')
+    # display_image_with_windows2(img)
 
-    input_fname = 'test_video.mp4'
+    # process_test_images(classifier, scaler)
+    # exit(0)
+
+    input_fname = 'project_video.mp4'
     vidcap = cv2.VideoCapture(input_fname)
     assert vidcap is not None
     fps = vidcap.get(cv2.CAP_PROP_FPS)
@@ -493,7 +500,7 @@ if __name__ == '__main__':
 
     # Open the output video stream
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    vidwrite = cv2.VideoWriter('test_video-out.mp4', fourcc=fourcc, fps=fps,
+    vidwrite = cv2.VideoWriter('project_video-hm.mp4', fourcc=fourcc, fps=fps,
                                frameSize=(horizontal_resolution, vertical_resolution))
 
     print('Source video {} is at {:.2f} fps with resolution of {}x{} pixels'.format(input_fname,
@@ -517,9 +524,10 @@ if __name__ == '__main__':
         heat_map = update_heat_map(heat_map, bounding_boxes)
         labels = label(heat_map)
         frame = draw_labeled_bounding_boxes(frame, labels)
-        # color_map = cv2.merge((heat_map, heat_map, heat_map))
+        color_map = cv2.merge((heat_map, heat_map, heat_map))
 
-        vidwrite.write(frame)
+        # vidwrite.write(frame)
+        vidwrite.write(color_map)
 
     elapsed = time() - start_time
     print('\nProcessing time', int(elapsed), 's at {:.3f}'.format(frame_counter / elapsed), 'fps')
@@ -549,3 +557,5 @@ Implement heat-maps
 Save a video clip with heatmaps for debugging/parameters tuning (optional)
 Refine bounding-boxes based on heat maps
 '''
+
+'''TODO Try HOG on HLS + RGB histogram on complete movie; also try YUV; try a different svm kernel; in histogram calculation, set the range!'''
