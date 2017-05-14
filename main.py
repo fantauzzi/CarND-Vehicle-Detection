@@ -175,18 +175,10 @@ def compute_image_features(image):
     """
     image2 = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     features1 = compute_hog_features(image2[:,:,2])
-    # features2= compute_histogram_features(image, [0,1,2])
+    # image = cv2.cvtColor(image, cv2.COLOR_BGR2YUV)
+    # features2= compute_histogram_features(image, [1,2])
     # features = np.concatenate((features1, features2))
     return features1
-
-def compute_image_features2(image):
-    """
-    Computes and returs as a Numpy array the unscaled features vector for the given image 
-    """
-    hls_image = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
-    descriptor = get_hog_descriptor()
-    features = descriptor.compute(hls_image)[:, 0]
-    return features
 
 
 def fit_and_pickle_classifier(train_x, train_y, valid_x, valid_y, scale=False):
@@ -433,7 +425,7 @@ def process_test_images(classifier, scaler):
 def update_heat_map(heat_map, bounding_boxes):
     heat = 2
     cool = 1
-    threshold = 4
+    threshold = 10
     for bbox in bounding_boxes:
         x0, y0, x1, y1 = bbox
         heat_map[y0:y1, x0:x1] += heat
@@ -504,7 +496,7 @@ if __name__ == '__main__':
 
     # Open the output video stream
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    vidwrite = cv2.VideoWriter('project_video-out2.mp4', fourcc=fourcc, fps=fps,
+    vidwrite = cv2.VideoWriter('project_video-out-6.mp4', fourcc=fourcc, fps=fps,
                                frameSize=(horizontal_resolution, vertical_resolution))
 
     print('Source video {} is at {:.2f} fps with resolution of {}x{} pixels'.format(input_fname,
@@ -524,15 +516,15 @@ if __name__ == '__main__':
         sys.stdout.write("\rProcessing frame: {0:>6}".format(frame_counter))
         sys.stdout.flush()
         bounding_boxes, total_windows = find_bounding_boxes(frame, classifier, scaler)
-        '''
-        for bbox in bounding_boxes:
+
+        '''for bbox in bounding_boxes:
             x0, y0, x1, y1 = bbox
-            if x0 >= 287 and x0 <=800:
+            if x0 >= 944 and 375 <= frame_counter <=700:
                 snap = frame[y0:y1+1,x0:x1+1,:]
                 assert snap.shape[0] % 64 == 0 and snap.shape[1] % 64 == 0
                 if snap.shape[0] > 64:
                     snap= cv2.resize(snap, (64, 64), interpolation=cv2.INTER_AREA)
-                snap_fname='snap{:05d}.png'.format(snap_counter)
+                snap_fname='snapA{:05d}.png'.format(snap_counter)
                 cv2.imwrite(snap_fname, snap)
                 snap_counter+=1'''
 
@@ -540,13 +532,13 @@ if __name__ == '__main__':
             draw_bounding_box(frame, *bbox)
         heat_map = update_heat_map(heat_map, bounding_boxes)
         labels = label(heat_map)
-        # frame_with_boxes = draw_labeled_bounding_boxes(frame, labels)
-        zeros = np.zeros_like(heat_map)
-        color_map = cv2.merge((zeros, zeros, heat_map))
-        color_map = cv2.add(color_map, frame)
+        frame_with_boxes = draw_labeled_bounding_boxes(frame, labels)
+        # zeros = np.zeros_like(heat_map)
+        # color_map = cv2.merge((zeros, zeros, heat_map))
+        # color_map = cv2.add(color_map, frame)
 
-        # vidwrite.write(frame)
-        vidwrite.write(color_map)
+        vidwrite.write(frame_with_boxes)
+        # vidwrite.write(color_map)
 
     elapsed = time() - start_time
     print('\nProcessing time', int(elapsed), 's at {:.3f}'.format(frame_counter / elapsed), 'fps')
