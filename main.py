@@ -15,7 +15,6 @@ from sklearn.utils import shuffle
 from skimage.feature import hog
 from scipy.ndimage.measurements import label
 from prettytable import PrettyTable
-from scipy.ndimage.morphology import generate_binary_structure
 
 class Params:
     """
@@ -249,15 +248,15 @@ class Perspective_grid:
         self._y_size = 64
         self._x_step = 16
         self._y_step = 16
-        self._horizon = 442
+        self._horizon = 409
 
     def __iter__(self):
         for enlargement in range(2, 4):
-            for row in range(-1, 4):
-                if enlargement == -1 and row <0:
+            for row in range(-1, 3):
+                if enlargement == 1 and (row == -1 or row ==3):
                     continue
-                x0 = self._roi[0][0]
-                y0 = self._horizon - self._y_size // 2 + row * self._y_step * enlargement
+                x0 = self._roi[0][0]+self._x_step//2
+                y0 = self._horizon + row * self._y_step * enlargement - self._y_step//2
                 x1, y1 = x0 + self._x_size * enlargement - 1, y0 + self._y_size * enlargement - 1
                 if y1 > self._roi[1][1]:
                     continue
@@ -273,60 +272,6 @@ class Perspective_grid:
                     x0 += self._x_step * enlargement
                     x1 = x0 + self._x_size * enlargement - 1
                     if x1 > self._roi[1][0]:
-                        break
-
-
-class Windows_grid:
-    """
-    Generator for detection windows in a grid.
-    """
-
-    def __init__(self, x_res, y_res):
-        """
-        Initialises the generator to produce detection windows on an image with the given resolution
-        """
-        self._x_res = x_res
-        self._y_res = y_res
-        self._roi = (0, self._y_res // 2), (self._x_res - 1, self._y_res - 1)
-        self._x_size = 64
-        self._y_size = 64
-        self._x_step = 16
-        self._y_step = 16
-
-    def __iter__(self):
-        def home(factor):
-            """
-            Returns the coordinates for the starting position of the detection window in the ROI (upper-left corner).
-            """
-            x0, y0 = self._roi[0]
-            x1, y1 = x0 + self._x_size * factor - 1, y0 + self._y_size * factor - 1
-            return x0, y0, x1, y1
-
-        for enlargement in range(1, 5):
-            x0, y0, x1, y1 = home(enlargement)
-            while True:
-                # Sanity checks (sane paranoia)
-                assert x1 - x0 + 1 == self._x_size * enlargement and y1 - y0 + 1 == self._y_size * enlargement
-                assert x1 > x0 and y1 > y0
-                assert x0 >= self._roi[0][0] and x0 <= self._roi[1][0]
-                assert y0 >= self._roi[0][1] and y0 <= self._roi[1][1]
-                assert x1 <= self._roi[1][0]
-                assert y1 <= self._roi[1][1]
-
-                yield x0, y0, x1, y1
-                # Slide one step to the right
-                x0 += self._x_step * enlargement
-                x1 = x0 + self._x_size * enlargement - 1
-                ''' If the window is now even partly out of the ROI to the right, slide one step down and return
-                as left as possible '''
-                if x1 > self._roi[1][0]:
-                    x0 = self._roi[0][0]
-                    x1 = x0 + self._x_size * enlargement - 1
-                    y0 += self._y_step * enlargement
-                    y1 = y0 + self._y_size * enlargement - 1
-                    ''' If the window is now even partly out of the ROI to the bottom, return it to the starting position,
-                     at the top left of the roi '''
-                    if y1 > self._roi[1][1]:
                         break
 
 
@@ -357,11 +302,11 @@ def display_image_with_windows2(image):
     windows = Perspective_grid(image.shape[1], image.shape[0])
 
     plt.subplots()
-    for size in range(1, 6):
+    for enlargement in range(1, 5):
         image_copy = np.copy(image)
         color = [0, 255, 0]
         for window in windows:
-            if window[2] - window[0] + 1 == 64 * size:
+            if window[2] - window[0] + 1 == 64 * enlargement:
                 draw_bounding_box(image_copy, *window, color)
                 color[1] = (color[1] - 64) % 256
                 color[2] = (color[2] + 64) % 256
@@ -424,15 +369,15 @@ def process_test_images(classifier, scaler):
 
 
 def update_heat_map(heat_map, bounding_boxes):
-    threshold = 40
+    threshold = 56
     new_heat = np.zeros_like(heat_map)
     for bbox in bounding_boxes:
         x0, y0, x1, y1 = bbox
-        new_heat[y0:y1, x0:x1] += 100
+        new_heat[y0:y1+1, x0:x1+1] += 100
     heat_map= (14*heat_map + new_heat)/15
-    thresholded = np.rint(heat_map)
+    thresholded = np.rint(heat_map).astype(np.uint)
     thresholded[heat_map < threshold] = 0
-    thresholded[heat_map >= threshold] = 255
+    # thresholded[heat_map >= threshold] = 255
     return heat_map, thresholded
 
 
@@ -481,8 +426,9 @@ if __name__ == '__main__':
             classifier = from_pickle['classifier']
             scaler = from_pickle['scaler']
 
-    # img= cv2.imread('test_images/test6.jpg')
+    # img= cv2.imread('test_images/test3.jpg')
     # display_image_with_windows2(img)
+    # exit(0)
 
     # process_test_images(classifier, scaler)
     # exit(0)
@@ -497,7 +443,8 @@ if __name__ == '__main__':
 
     # Open the output video stream
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    vidwrite = cv2.VideoWriter('project_video-out-21.mp4', fourcc=fourcc, fps=fps,
+    out_fname='project_video-out-40.mp4'
+    vidwrite = cv2.VideoWriter(out_fname, fourcc=fourcc, fps=fps,
                                frameSize=(horizontal_resolution, vertical_resolution))
 
     print('Source video {} is at {:.2f} fps with resolution of {}x{} pixels'.format(input_fname,
@@ -532,7 +479,6 @@ if __name__ == '__main__':
         for bbox in bounding_boxes:
             draw_bounding_box(frame, *bbox)
         heat_map, thresholded = update_heat_map(heat_map, bounding_boxes)
-        # labels = label(thresholded, structure=generate_binary_structure(2,2))
         labels = label(thresholded)
         frame_with_boxes = draw_labeled_bounding_boxes(frame, labels)
         zeros = np.zeros_like(heat_map, dtype =np.uint8)
@@ -551,4 +497,4 @@ if __name__ == '__main__':
             pass
 
     elapsed = time() - start_time
-    print('\nProcessing time', int(elapsed), 's at {:.3f}'.format(frame_counter / elapsed), 'fps')
+    print('\nProcessing time', int(elapsed), 's at {:.3f}'.format(frame_counter / elapsed), 'fps, output in',out_fname)
