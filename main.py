@@ -15,7 +15,7 @@ from sklearn.utils import shuffle
 from skimage.feature import hog
 from scipy.ndimage.measurements import label
 from prettytable import PrettyTable
-
+from scipy.ndimage.morphology import generate_binary_structure
 
 class Params:
     """
@@ -34,9 +34,9 @@ class Params:
     hog_pixels_per_cell = (8, 8)  # Cell size for HOG
     hog_cells_per_block = (2, 2)  # Block size for HOG
     hog_block_norm = 'L2'  # Norm used for HOG
-    scale_features = False  # If True, features are scaled to 0 mean and variance=1 before classification
-    augment_dataset = False  # If True, dataset is augmented before cliassifier training
-    SVM_C = .5  # C parameter for SVM classifier
+    scale_features = True  # If True, features are scaled to 0 mean and variance=1 before classification
+    augment_dataset = True  # If True, dataset is augmented before cliassifier training
+    SVM_C = 0.001  # C parameter for SVM classifier
 
 
 descriptor = None
@@ -51,7 +51,7 @@ def get_hog_descriptor():
                                        _blockSize=block_size,
                                        _blockStride=Params.hog_pixels_per_cell,
                                        _cellSize=Params.hog_pixels_per_cell,
-                                       _nbins=9,
+                                       _nbins=16,
                                        _gammaCorrection=True,
                                        _signedGradient=True)
 
@@ -78,13 +78,14 @@ def load_and_pickle_datasets(augment=False):
                'vehicles/GTI_Left',
                'vehicles/GTI_MiddleClose',
                'vehicles/GTI_Right',
+               '/object-dataset-select',
                'non-vehicles/Extras',
                'non-vehicles/GTI',
                'non-vehicles-additional']
 
     ''' 1 if the corresponding element in `subdirs` is a directory with car images, 0 if it is a directory with non-car
     images '''
-    subdirs_y = [1, 1, 1, 1, 0, 0, 0]
+    subdirs_y = [1, 1, 1, 1, 1,0, 0, 0]
 
     dataset_x, dataset_y = [], []
     for subdir, y in zip(subdirs, subdirs_y):
@@ -99,7 +100,7 @@ def load_and_pickle_datasets(augment=False):
             dataset_x.append(image)
             label = Params.car_label if y == 1 else Params.non_car_label
             dataset_y.append(label)
-            if augment:
+            if augment and label == Params.non_car_label:
                 flipped = np.fliplr(image)
                 dataset_x.append(flipped)
                 dataset_y.append(label)
@@ -173,12 +174,12 @@ def compute_image_features(image):
     """
     Computes and returs as a Numpy array the unscaled features vector for the given image 
     """
-    image2 = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    features1 = compute_hog_features(image2[:,:,2])
-    # image = cv2.cvtColor(image, cv2.COLOR_BGR2YUV)
-    # features2= compute_histogram_features(image, [1,2])
-    # features = np.concatenate((features1, features2))
-    return features1
+    image_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    features1 = compute_hog_features(image_hsv[:,:,2])
+    image2 = cv2.cvtColor(image, cv2.COLOR_BGR2YUV)
+    features2= compute_histogram_features(image2, [1,2])
+    features = np.concatenate((features1, features2))
+    return features
 
 
 def fit_and_pickle_classifier(train_x, train_y, valid_x, valid_y, scale=False):
@@ -251,9 +252,9 @@ class Perspective_grid:
         self._horizon = 442
 
     def __iter__(self):
-        for enlargement in range(1, 4):
-            for row in range(-1, 3):
-                if enlargement == 1 and row == -1:
+        for enlargement in range(2, 4):
+            for row in range(-1, 4):
+                if enlargement == -1 and row <0:
                     continue
                 x0 = self._roi[0][0]
                 y0 = self._horizon - self._y_size // 2 + row * self._y_step * enlargement
@@ -423,16 +424,16 @@ def process_test_images(classifier, scaler):
 
 
 def update_heat_map(heat_map, bounding_boxes):
-    heat = 2
-    cool = 1
-    threshold = 10
+    threshold = 40
+    new_heat = np.zeros_like(heat_map)
     for bbox in bounding_boxes:
         x0, y0, x1, y1 = bbox
-        heat_map[y0:y1, x0:x1] += heat
-    heat_map[heat_map >= cool] -= cool
-    thresholded = np.copy(heat_map)
-    thresholded[heat_map <= threshold] = 0
-    return heat_map
+        new_heat[y0:y1, x0:x1] += 100
+    heat_map= (14*heat_map + new_heat)/15
+    thresholded = np.rint(heat_map)
+    thresholded[heat_map < threshold] = 0
+    thresholded[heat_map >= threshold] = 255
+    return heat_map, thresholded
 
 
 def draw_labeled_bounding_boxes(frame, labels):
@@ -448,7 +449,7 @@ def draw_labeled_bounding_boxes(frame, labels):
         # Draw the box on the image
         cv2.rectangle(frame, bbox[0], bbox[1], (0, 0, 255), 6)
         # Return the image
-        return frame
+    return frame
 
 
 if __name__ == '__main__':
@@ -496,14 +497,14 @@ if __name__ == '__main__':
 
     # Open the output video stream
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    vidwrite = cv2.VideoWriter('project_video-out-6.mp4', fourcc=fourcc, fps=fps,
+    vidwrite = cv2.VideoWriter('project_video-out-21.mp4', fourcc=fourcc, fps=fps,
                                frameSize=(horizontal_resolution, vertical_resolution))
 
     print('Source video {} is at {:.2f} fps with resolution of {}x{} pixels'.format(input_fname,
                                                                                     fps,
                                                                                     int(horizontal_resolution),
                                                                                     int(vertical_resolution)))
-    heat_map = np.zeros((vertical_resolution, horizontal_resolution), dtype=np.uint8)
+    heat_map = np.zeros((vertical_resolution, horizontal_resolution), dtype=np.float64)
     frame_counter = 0
     start_time = time()
     # Main loop, process one frame at a time from the input video stream and send the result to the output stream
@@ -530,43 +531,24 @@ if __name__ == '__main__':
 
         for bbox in bounding_boxes:
             draw_bounding_box(frame, *bbox)
-        heat_map = update_heat_map(heat_map, bounding_boxes)
-        labels = label(heat_map)
+        heat_map, thresholded = update_heat_map(heat_map, bounding_boxes)
+        # labels = label(thresholded, structure=generate_binary_structure(2,2))
+        labels = label(thresholded)
         frame_with_boxes = draw_labeled_bounding_boxes(frame, labels)
-        # zeros = np.zeros_like(heat_map)
-        # color_map = cv2.merge((zeros, zeros, heat_map))
-        # color_map = cv2.add(color_map, frame)
+        zeros = np.zeros_like(heat_map, dtype =np.uint8)
+        heat_pixmap = np.array(heat_map, dtype=np.uint8)
+        color_map = cv2.merge((zeros, zeros, heat_pixmap))
+        color_map = cv2.add(color_map, frame_with_boxes)
 
-        vidwrite.write(frame_with_boxes)
-        # vidwrite.write(color_map)
+        # vidwrite.write(frame_with_boxes)
+        to_print = '#{:d}'.format(frame_counter)
+        text_color = (0, 0, 128)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        cv2.putText(color_map, to_print, (0, 50), font, 1, text_color, 2, cv2.LINE_AA)
+
+        vidwrite.write(color_map)
+        if frame_counter > 250:
+            pass
 
     elapsed = time() - start_time
     print('\nProcessing time', int(elapsed), 's at {:.3f}'.format(frame_counter / elapsed), 'fps')
-
-'''
-* Load the dataset(s)
-* Crop and resize every image as necessary
-* Shuffle the dataset and partition it into training, test and validation data sets
-* Save the datasets as a pickle
-
-* Load the datasets from pickle
-Augment the training dataset (optional)
-* Print dataset stats
-* Convert every image into a vector of features
-Train the SVM
-* Test the trained SVM on the validation data set
-Test the trained SVM on the test data set (optional)
-* Provide a generator for detection windows
-* Plot all the detection windows over a test image
-* Load test images
-* Classify the content of detection windows and report it
-* Plot positive detection windows of the test images
-* Save the test images
-* Loop over frames from video clip
-* Overlay bounding boxes and save to a video clip
-Implement heat-maps
-Save a video clip with heatmaps for debugging/parameters tuning (optional)
-Refine bounding-boxes based on heat maps
-'''
-
-'''TODO Try HOG on HLS + RGB histogram on complete movie; also try YUV; try a different svm kernel; in histogram calculation, set the range!'''
