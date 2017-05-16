@@ -452,7 +452,7 @@ def main():
 
     # Open the output video stream, with the same resolution and frame rate as the input video stream
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    out_fname='project_video-out-40.mp4'
+    out_fname='project_video-out41.mp4'
     vidwrite = cv2.VideoWriter(out_fname, fourcc=fourcc, fps=fps,
                                frameSize=(horizontal_resolution, vertical_resolution))
 
@@ -474,12 +474,12 @@ def main():
 
         '''for bbox in bounding_boxes:
             x0, y0, x1, y1 = bbox
-            if x0 >= 944 and 375 <= frame_counter <=700:
+            if x0 <=473 and x1-x0+1 == 128:
                 snap = frame[y0:y1+1,x0:x1+1,:]
                 assert snap.shape[0] % 64 == 0 and snap.shape[1] % 64 == 0
                 if snap.shape[0] > 64:
                     snap= cv2.resize(snap, (64, 64), interpolation=cv2.INTER_AREA)
-                snap_fname='snapA{:05d}.png'.format(snap_counter)
+                snap_fname='snapD{:05d}.png'.format(snap_counter)
                 cv2.imwrite(snap_fname, snap)
                 snap_counter+=1'''
 
