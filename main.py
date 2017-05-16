@@ -111,12 +111,11 @@ def load_and_pickle_datasets(augment=False):
 
 def shuffle_and_split_dataset(dataset_x, dataset_y, training_size=.9):
     """
-    Splits randomly the given dataset between a training, validation and test sets. 
+    Splits randomly the given dataset between a training and a validatio set. 
     :param dataset_x: the dataset data.
     :param dataset_y: the dataset labels.
-    :param training_size: the desired training set size, as a fraction of the given dataset size; remaining data
-    are split half and half between validation and test set.
-    :return: (train_x, train_y, valid_x, valid_y, test_x, test_y)
+    :param training_size: the desired training set size, as a fraction of the given dataset size.
+    :return: (train_x, train_y, valid_x, valid_y)
     """
 
     assert 0 < training_size < 1
@@ -124,37 +123,12 @@ def shuffle_and_split_dataset(dataset_x, dataset_y, training_size=.9):
                                                           dataset_y,
                                                           random_state=Params.random_seed,
                                                           test_size=1 - training_size)
-    '''valid_size = len(test_y) // 2
-    valid_x = test_x[0:valid_size]
-    valid_y = test_y[0:valid_size]
-    test_x = test_x[valid_size:]
-    test_y = test_y[valid_size:]'''
-    test_x, test_y = [], []
-    return train_x, train_y, valid_x, valid_y, test_x, test_y
+    return train_x, train_y, valid_x, valid_y
 
 
-def compute_hog_features2(channel):
-    """
-    Returns a Numpy array with the unscaled features (signature) for the given single-channel image
-    """
-
-    ''' Note: hog() can take as input a grayscale image with integer pixels values in [0, 255], and returns a signature
-    of floating point numbers, and a HOG image (when visualise==True) with floating point, non-negative pixel values. '''
-    features = hog(channel,
-                   orientations=Params.hog_orientations,
-                   pixels_per_cell=Params.hog_pixels_per_cell,
-                   cells_per_block=Params.hog_cells_per_block,
-                   block_norm=Params.hog_block_norm,
-                   feature_vector=True,
-                   transform_sqrt=True,
-                   visualise=False)
-
-    return features
-
-
-def compute_hog_features(channel):
+def compute_hog_features(image):
     descriptor = get_hog_descriptor()
-    features = descriptor.compute(channel)[:, 0]
+    features = descriptor.compute(image)[:, 0]
     return features
 
 
@@ -397,8 +371,7 @@ def draw_labeled_bounding_boxes(frame, labels):
     return frame
 
 
-if __name__ == '__main__':
-
+def main():
     # Read the dataset (and save it pickled, if not done already)
     if not os.path.isfile(Params.pickled_dataset):
         print('Dataset file', Params.pickled_dataset, 'not found; making it.')
@@ -408,15 +381,16 @@ if __name__ == '__main__':
             print('Loading dataset from file', Params.pickled_dataset)
             dataset_x, dataset_y = pickle.load(pickle_file)
 
-    # Print dataset stats
+            # Print dataset stats
+
     n_cars = sum(label == Params.car_label for label in dataset_y)
     print('Read', len(dataset_y), 'images,', n_cars, 'with car, and', len(dataset_y) - n_cars, 'with no car')
+    train_x, train_y, valid_x, valid_y = shuffle_and_split_dataset(dataset_x, dataset_y)
+    print('Training dataset size', len(train_y), ', validation', len(valid_y))
 
     # Split the dataset between training, validation and test sets
-    train_x, train_y, valid_x, valid_y, test_x, test_y = shuffle_and_split_dataset(dataset_x, dataset_y)
-    print('Training dataset size', len(train_y), ', validation', len(valid_y), ', test', len(test_y))
-
     if not os.path.isfile(Params.pickled_classifier):
+
         print('Trained classifier file', Params.pickled_classifier, 'not found; making it.')
         classifier, scaler = fit_and_pickle_classifier(train_x, train_y, valid_x, valid_y, scale=Params.scale_features)
     else:
@@ -426,8 +400,7 @@ if __name__ == '__main__':
             classifier = from_pickle['classifier']
             scaler = from_pickle['scaler']
 
-    # img= cv2.imread('test_images/test3.jpg')
-    # display_image_with_windows2(img)
+            # img= cv2.imread('test_images/test3.jpg')
     # exit(0)
 
     # process_test_images(classifier, scaler)
@@ -456,6 +429,7 @@ if __name__ == '__main__':
     start_time = time()
     # Main loop, process one frame at a time from the input video stream and send the result to the output stream
     snap_counter = 0
+    # display_image_with_windows2(img)
     while (True):
         read, frame = vidcap.read()
         if not read:
@@ -485,16 +459,20 @@ if __name__ == '__main__':
         heat_pixmap = np.array(heat_map, dtype=np.uint8)
         color_map = cv2.merge((zeros, zeros, heat_pixmap))
         color_map = cv2.add(color_map, frame_with_boxes)
-
-        # vidwrite.write(frame_with_boxes)
         to_print = '#{:d}'.format(frame_counter)
         text_color = (0, 0, 128)
         font = cv2.FONT_HERSHEY_SIMPLEX
         cv2.putText(color_map, to_print, (0, 50), font, 1, text_color, 2, cv2.LINE_AA)
 
         vidwrite.write(color_map)
+        # vidwrite.write(frame_with_boxes)
         if frame_counter > 250:
             pass
 
+
     elapsed = time() - start_time
     print('\nProcessing time', int(elapsed), 's at {:.3f}'.format(frame_counter / elapsed), 'fps, output in',out_fname)
+
+
+if __name__ == '__main__':
+    main()
