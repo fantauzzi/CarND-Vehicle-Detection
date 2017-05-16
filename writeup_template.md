@@ -75,7 +75,7 @@ Method `fit_and_pickle_classifier()` re-scales image features with `sklearn.prep
  
  I set the C parameter for the Linear SVM classifier to 0.001 by trial and error, based on the classifier performance on the validation set. I didn't find a very fine tuning worthwhile, perhaps based on a grid search. Comparing performance on the validation set and camera frames, I could see I was just overfitting my training data; improvements on validation performance below 1% didn't reflect on improved detection in video frames.
    
-Overall accuracy of the trained classifier on the validation set is 0.981. Here below a table with details of validation performance; Class 1 corresponds to cars, and Class 0 to no-cars.
+Overall accuracy of the trained classifier on the validation set is 0.981. Here below a table with details of validation performance; *Class 1* corresponds to cars, and *Class 0* to no-cars.
 
 
 | Class | Precision | Recall | F-score | Support |
@@ -90,13 +90,32 @@ When using validation to tune parameters, I tried to obtain a validation accurac
 
 ####1. Describe how (and identify where in your code) you implemented a sliding window search.  How did you decide what scales to search and how much to overlap windows?
 
-I decided to search random window positions at random scales all over the image and came up with this (ok just kidding I didn't actually ;):
+Class `Perspective_grid` is a Python generator that yields coordinates for a sliding window. Using it as an iterator, it provides a succession of sliding window coordinates that cover the region of interest (ROI) in the image, in a certain pattern. The ROI goes from where the horizon should be down to the bottom of the screen. Windows have size of 128x128 pixels and 192*192 pixels, and windows of the same size overlap each other by 25%. Smaller windows cover the ROI closer to the horizon, while larger windows cover it closer to the bottom of the screen. 
+
+Initially I had adopted also windows of size 64x64 pixels and 256x256 pixels. However, those two sizes didn't make a difference in detecting cars in the `project_video.mp4` clip; I therefore did without, in order to speed-up computation.  
+
+I wrote a function `display_image_with_windows()` that draws the sliding windows in different colors over an image of choice, to help tune positions, scale and overlap:  
+
+TODO: image here!
 
 ![alt text][image3]
 
 ####2. Show some examples of test images to demonstrate how your pipeline is working.  What did you do to optimize the performance of your classifier?
 
-Ultimately I searched on two scales using YCrCb 3-channel HOG features plus spatially binned color and histograms of color in the feature vector, which provided a nice result.  Here are some example images:
+In spite of the parameters tuning, that could give me a validation accuracy up to 99%, detection was often missing the white car, prominent on the right side of sevaral test frames. Detection was week for both cars, but especially the white one, with few or no sliding windows detecting them in each frame. As a consequence, cars in the heatmap couldn't be differentiated from false positives; any thresholding that would remove a significant amount of false positives would also remove the cars!
+
+ Increasing the number of HOG bins to 16 and adding color histograms in the U and V channels of YUV helped, but not enough. Exploring the dataset, I could see that few images had the car from the perspective seen for the white car. Also, most dataset images were tightly cropped, not showing the entire car silhouette. I believe that can help limiting false positives, as the image doesn't include lane lines, curbs, signs, etc.; but it also prevents the classifier from learning the car outline, a conspicuous HOG feature.
+ 
+ I decided I need a larger dataset. To do so, I wrote a short program to extract car images from one of Udacity's Annotated Driver datasets. Writing code to extract non-car images from the same would have been more time consuming, I decided instead to augment the dataset already in use, adding to it a left-to-right flipped copy of every non-car image. 
+ 
+ The initial dataset had TODO car and TODO non-car images. The expanded dataset contains TODO car and TODO non-car images, after non-car image augmentaton. 
+ 
+ With the additional images in the dataset, accuracy of validation went down from 99% to 98%, while detected cars in the heatmap were more prominent, with a stronger signal than many false positives.
+ 
+ Detection still picked up recurrent false positives along the edges of the road, and in the middle of the lane, often enough for them to compete with detected cars in the heatmap. To get rid of them I went for hard negative minings, identifying and adding to the dataset portions of frame that were giving the frequent false positive.
+ 
+ After the hard negative mining, I could finally determine a threshold for the heatmap that successfully discriminates detected cars from the remaining false positives.  
+  
 
 ![alt text][image4]
 ---
@@ -108,6 +127,7 @@ Here's a [link to my video result](./project_video.mp4)
 
 
 ####2. Describe how (and identify where in your code) you implemented some kind of filter for false positives and some method for combining overlapping bounding boxes.
+
 
 I recorded the positions of positive detections in each frame of the video.  From the positive detections I created a heatmap and then thresholded that map to identify vehicle positions.  I then used `scipy.ndimage.measurements.label()` to identify individual blobs in the heatmap.  I then assumed each blob corresponded to a vehicle.  I constructed bounding boxes to cover the area of each blob detected.  
 

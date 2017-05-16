@@ -12,8 +12,7 @@ from sklearn.metrics import accuracy_score
 from sklearn.metrics import precision_recall_fscore_support
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils import shuffle
-from skimage.feature import hog
-from scipy.ndimage.measurements import label
+import scipy.ndimage.measurements
 from prettytable import PrettyTable
 
 class Params:
@@ -127,12 +126,26 @@ def shuffle_and_split_dataset(dataset_x, dataset_y, training_size=.9):
 
 
 def compute_hog_features(image):
+    """
+    Returns the HOG descriptor for the given image, which can be single channel or 3-channels.
+    """
     descriptor = get_hog_descriptor()
     features = descriptor.compute(image)[:, 0]
     return features
 
 
 def compute_histogram_features(image, channels, upper_bounds=None):
+    """
+    Provides the histogram descriptor for the selected image channels. Descriptors are calculated for the individual
+    channels, and then concatenated in one descriptor for the image. Result is not normalised.
+    :param image: the 3-channels input image 
+    :param channels: the list of channels to be included for the descriptors; they must be numbered as 0, 1 and 2 in
+     the list; e.g. [0, 1, 2] to select all three channels
+    :param upper_bounds: The list of upper-bounds to be used to scale the corresponding channels; if set to None,
+     255 is used as upper-bound for every channel.
+    :return: a Numpy array with the image histogram features, obtained concatenating the histogram features of the
+    given channels.
+    """
     if upper_bounds is None:
         upper_bounds = [255]*len(channels)
     features = []
@@ -145,12 +158,12 @@ def compute_histogram_features(image, channels, upper_bounds=None):
 
 def compute_image_features(image):
     """
-    Computes and returs as a Numpy array the unscaled features vector for the given image 
+    Computes and returs as a Numpy array the unscaled features vector for the given image. 
     """
     image_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     features1 = compute_hog_features(image_hsv[:,:,2])
-    image2 = cv2.cvtColor(image, cv2.COLOR_BGR2YUV)
-    features2= compute_histogram_features(image2, [1,2])
+    image_yuv = cv2.cvtColor(image, cv2.COLOR_BGR2YUV)
+    features2= compute_histogram_features(image_yuv, [1,2])
     features = np.concatenate((features1, features2))
     return features
 
@@ -180,7 +193,6 @@ def fit_and_pickle_classifier(train_x, train_y, valid_x, valid_y, scale=False):
     print('Computed features for training and validation set in', round(time() - start), 's')
 
     start = time()
-    # classifier = svm.SVC(kernel='linear', C=Params.SVM_C)
     classifier = svm.LinearSVC(C=Params.SVM_C)
     classifier = classifier.fit(train_feat_x, train_y)
     print('Trained classifier in', round(time() - start), 's')
@@ -225,6 +237,9 @@ class Perspective_grid:
         self._horizon = 409
 
     def __iter__(self):
+        """
+        Yields detection windows across the image, stops after the last detection window has been generated.
+        """
         for enlargement in range(2, 4):
             for row in range(-1, 3):
                 if enlargement == 1 and (row == -1 or row ==3):
@@ -251,32 +266,22 @@ class Perspective_grid:
 
 def draw_bounding_box(image, x0, y0, x1, y1, color=[255, 0, 0]):
     """
-    Draws over the given image a rectangle with the given end-points coordinates and color.
+    Draws over the given image a rectangle with the given end-points coordinates and color. The image passed as
+    parameter is modified, and also returned after modification.
     """
     cv2.rectangle(image, (x0, y0), (x1, y1), color=color)
+    return image
 
 
 def display_image_with_windows(image):
-    # Initialize the detection windows maker
-    windows = Perspective_grid(image.shape[1], image.shape[0])
-
-    color = [0, 255, 0]
-    for window in windows:
-        draw_bounding_box(image, *window, color)
-        color[1] = (color[1] - 64) % 256
-        color[2] = (color[2] + 64) % 256
-
-    image = image[:, :, ::-1]
-    plt.imshow(image)
-    plt.show()
-
-
-def display_image_with_windows2(image):
-    # Initialize the detection windows maker
+    """
+    Debugging function that displays the given image with overlaid detection windows, one size of detection
+    windows at a time.
+    """
     windows = Perspective_grid(image.shape[1], image.shape[0])
 
     plt.subplots()
-    for enlargement in range(1, 5):
+    for enlargement in range(1, 4):
         image_copy = np.copy(image)
         color = [0, 255, 0]
         for window in windows:
@@ -301,7 +306,8 @@ def find_bounding_boxes(frame, classifier, scaler):
     """
     windows = Perspective_grid(frame.shape[1], frame.shape[0])
     total_windows, positive_windows = 0, 0
-    bounding_boxes = []
+    bounding_boxes = []  # Windows where cars are detected will be appended here
+    # Iterate over detection windows
     for window in windows:
         total_windows += 1
         x0, y0, x1, y1 = window
@@ -316,10 +322,12 @@ def find_bounding_boxes(frame, classifier, scaler):
             image = cv2.resize(image,
                                (Params.image_width, Params.image_height),
                                interpolation=interpolation)
+        # Get the features vector for the image, and scale it if requested
         features = compute_image_features(image)
         if scaler is not None:
             features = scaler.transform([features])
             features = np.squeeze(features)
+        # Classify the window content and update the list of bounding boxes for positive detections
         classification = classifier.predict([features])
         if classification[0] == Params.car_label:
             bounding_boxes.append((x0, y0, x1, y1))
@@ -328,6 +336,10 @@ def find_bounding_boxes(frame, classifier, scaler):
 
 
 def process_test_images(classifier, scaler):
+    """
+    Detects cars in all the test images coming with the project, and saves the resulting images, using the given
+    classifier and scaler.
+    """
     fnames = [name for name in glob.glob('test_images/*.jpg')] + [name for name in glob.glob('test_images/*.png')]
     for fname in fnames:
         frame = cv2.imread(fname)
@@ -343,6 +355,19 @@ def process_test_images(classifier, scaler):
 
 
 def update_heat_map(heat_map, bounding_boxes):
+    """
+    Updates a heatmap with the given bounding boxes, and provides a thresholded copy of it.
+    The heatmap passed as parameter is modified and also returned.
+    For every pixel that is in a bounding box, the corresponding pixel in the heatmap is incremented by 100. If the
+    pixel is in multiple bounding boxes, the corresponding heatmap pixel is incremented multiple times. After update,
+    the heatmap is averaged with the 14 previous heatmaps, each equally weighted. The updated heatmap is copied
+    with pixels rounded to the nearest integer value; this copy is then thresholded: pixels below threshold are set
+     to 0, while other pixels are left unchanged.
+    :param heat_map: the heatmap as a single-channel image of type float
+    :param bounding_boxes: the list of bounding boxes to be drawn over the heatmap
+    :return: a pair (heatmap, thresholded) where heatmap has been updated with the bounding boxes, and thresholded
+    is the result of thresholding the heatmap, as a Numpy array of type np.uint.
+    """
     threshold = 56
     new_heat = np.zeros_like(heat_map)
     for bbox in bounding_boxes:
@@ -351,11 +376,16 @@ def update_heat_map(heat_map, bounding_boxes):
     heat_map= (14*heat_map + new_heat)/15
     thresholded = np.rint(heat_map).astype(np.uint)
     thresholded[heat_map < threshold] = 0
-    # thresholded[heat_map >= threshold] = 255
     return heat_map, thresholded
 
 
 def draw_labeled_bounding_boxes(frame, labels):
+    """
+    Draws a rectangle around detected cars in the given image.
+    :param frame: the image where rectangles are to be drawn, in overlay. The referred image is modified.
+    :param labels: the list of rectangles along with their labels, as returned by `scipy.ndimage.measurements.label`
+    :return: the modified image.
+    """
     # Iterate through all detected cars
     for car_number in range(1, labels[1] + 1):
         # Find pixels with each car_number label value
@@ -381,16 +411,17 @@ def main():
             print('Loading dataset from file', Params.pickled_dataset)
             dataset_x, dataset_y = pickle.load(pickle_file)
 
-            # Print dataset stats
-
+    # Print dataset stats
     n_cars = sum(label == Params.car_label for label in dataset_y)
     print('Read', len(dataset_y), 'images,', n_cars, 'with car, and', len(dataset_y) - n_cars, 'with no car')
+
+    # Split the dataset between training, validation and test sets
     train_x, train_y, valid_x, valid_y = shuffle_and_split_dataset(dataset_x, dataset_y)
     print('Training dataset size', len(train_y), ', validation', len(valid_y))
 
-    # Split the dataset between training, validation and test sets
+    '''Load the classifier and scalar from a pickled file, if available, otherwise compute it, fit the classifier
+    and pickle it with the scaler.'''
     if not os.path.isfile(Params.pickled_classifier):
-
         print('Trained classifier file', Params.pickled_classifier, 'not found; making it.')
         classifier, scaler = fit_and_pickle_classifier(train_x, train_y, valid_x, valid_y, scale=Params.scale_features)
     else:
@@ -400,12 +431,12 @@ def main():
             classifier = from_pickle['classifier']
             scaler = from_pickle['scaler']
 
-            # img= cv2.imread('test_images/test3.jpg')
-    # exit(0)
-
+    # Uncomment below for parameters tuning and debugging on a given test image
+    # img= cv2.imread('test_images/test3.jpg')
     # process_test_images(classifier, scaler)
     # exit(0)
 
+    # Open the input video stream and determine its resolution and frame rate
     input_fname = 'project_video.mp4'
     vidcap = cv2.VideoCapture(input_fname)
     assert vidcap is not None
@@ -414,22 +445,23 @@ def main():
     vertical_resolution = int(vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     horizontal_resolution = int(vidcap.get(cv2.CAP_PROP_FRAME_WIDTH))
 
-    # Open the output video stream
+    print('Source video {} is at {:.2f} fps with resolution of {}x{} pixels'.format(input_fname,
+                                                                                    fps,
+                                                                                    int(horizontal_resolution),
+                                                                                    int(vertical_resolution)))
+
+    # Open the output video stream, with the same resolution and frame rate as the input video stream
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
     out_fname='project_video-out-40.mp4'
     vidwrite = cv2.VideoWriter(out_fname, fourcc=fourcc, fps=fps,
                                frameSize=(horizontal_resolution, vertical_resolution))
 
-    print('Source video {} is at {:.2f} fps with resolution of {}x{} pixels'.format(input_fname,
-                                                                                    fps,
-                                                                                    int(horizontal_resolution),
-                                                                                    int(vertical_resolution)))
+    # Initialize the heatmap to all zeroes (black)
     heat_map = np.zeros((vertical_resolution, horizontal_resolution), dtype=np.float64)
     frame_counter = 0
     start_time = time()
-    # Main loop, process one frame at a time from the input video stream and send the result to the output stream
+    # Main loop, process one frame at a time from the input video stream, and send the result to the output stream
     snap_counter = 0
-    # display_image_with_windows2(img)
     while (True):
         read, frame = vidcap.read()
         if not read:
@@ -437,6 +469,7 @@ def main():
         frame_counter += 1
         sys.stdout.write("\rProcessing frame: {0:>6}".format(frame_counter))
         sys.stdout.flush()
+        # Use the classifier and scaler to find bounding boxes of probable cars in the frame
         bounding_boxes, total_windows = find_bounding_boxes(frame, classifier, scaler)
 
         '''for bbox in bounding_boxes:
@@ -452,8 +485,11 @@ def main():
 
         for bbox in bounding_boxes:
             draw_bounding_box(frame, *bbox)
+        # Update the heatmap with the found bounding boxes, threshold it
         heat_map, thresholded = update_heat_map(heat_map, bounding_boxes)
-        labels = label(thresholded)
+        # Label adjacent non-zero pixels in the thresholded heatmap
+        labels = scipy.ndimage.measurements.label(thresholded)
+        # Draw the refined bounding boxes over the camera frame
         frame_with_boxes = draw_labeled_bounding_boxes(frame, labels)
         zeros = np.zeros_like(heat_map, dtype =np.uint8)
         heat_pixmap = np.array(heat_map, dtype=np.uint8)
@@ -464,6 +500,7 @@ def main():
         font = cv2.FONT_HERSHEY_SIMPLEX
         cv2.putText(color_map, to_print, (0, 50), font, 1, text_color, 2, cv2.LINE_AA)
 
+        # Write the processed frame to output
         vidwrite.write(color_map)
         # vidwrite.write(frame_with_boxes)
         if frame_counter > 250:
