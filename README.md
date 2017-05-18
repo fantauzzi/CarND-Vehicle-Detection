@@ -11,6 +11,25 @@ The goals / steps of this project are the following:
 * Run your pipeline on a video stream (start with the test_video.mp4 and later implement on full project_video.mp4) and create a heat map of recurring detections frame by frame to reject outliers and follow detected vehicles.
 * Estimate a bounding box for vehicles detected.
 
+## Running the Program
+
+In the project directory, type:
+`python3 main.py --input <video_clip>`
+
+where `<video_clip>` is the name of the file with the video clip to be processed. If not provided, it defaults to `project_video.mp4`
+
+## Project Content
+ * `car-no-car.p` pickled file with labeled dataset images.
+ * `classifier.p` pickled file with trained classifier and scaler.
+ * `extract.py` utility program to extract a random sample of car images from Udacity's Annotated Driver Dataset.
+ * `.gitignore` GIT configuration file.
+ * `main.py` the program for vehicle detection.
+ * `output_images/` pictures showed in this `README.md`
+ * `project_video.mp4` the test video clip.
+ * `project_video-out.mp4` the processing output, with detected vehicles.
+ * `README.md` this file, the project write-up.
+ * `test_images/` video frames useful for parameters tuning and debugging.
+
 [//]: # (Image References)
 [image1]: ./output_images/windows-128x128.jpg
 [image2]: ./output_images/hard-neg1.png
@@ -46,9 +65,9 @@ This is it!
 
 The `main()` function tries to load the dataset from a pickled file `car-no-car.p`. If it doesn't find it, then it loads the dataset images, and pickles them along with their labels calling `load_and_pickle_datasets()`. The dataset has been obtained from:
  
- * GTI vehicle image database
- * KITTI vision benchmark suite
- * Udacity's annotated driving dataset
+ * GTI Vehicle Image Database
+ * KITTI Vision Benchmark Suite
+ * Udacity's Annotated Driving Dataset
  
 `main()` shuffles and splits the dataset between a training set (90%) and a validation set (10%) calling `shuffle_and_split_dataset()`. It then calls `fit_and_pickle_classifier()`, which extracts features from the dataset images before fitting a classifier. 
 
@@ -78,7 +97,7 @@ I tuned parameters by trial and error first running the trained classifier on a 
 ####3. Describe how (and identify where in your code) you trained a classifier using your selected HOG features (and color features if you used them).
 
 
-Function `fit_and_pickle_classifier()` re-scales image features with `sklearn.preprocessing.StandardScaler`, which results in improved detection accuracy. It then fits a Support Vector Machine (SVM) linear classifier with `sklearn.svm.LinearSVC¶()`, evaluates the result on the validation dataset, and saves scaler and classifier in a pickled file. At the next run, it will load them from the pickled file and avoid repeating the computation.
+Function `fit_and_pickle_classifier()` re-scales image features with `sklearn.preprocessing.StandardScaler`, which results in improved detection accuracy. It then fits a Support Vector Machine (SVM) linear classifier with `sklearn.svm.LinearSVC¶()`, evaluates the result on the validation set, and saves scaler and classifier in a pickled file. At the next run, it will load them from the pickled file and avoid repeating the computation.
  
  I set the C parameter for the Linear SVM classifier to 0.001 by trial and error, based on the classifier performance on the validation set. I didn't find a very fine tuning worthwhile, perhaps based on a grid search. Comparing performance on the validation set and camera frames, I could see I was just overfitting my training data; improvements on validation performance rom 98% to 99% didn't reflect on improved detection in video frames.
    
@@ -101,8 +120,8 @@ Class `Perspective_grid` is a Python generator that yields coordinates for a sli
 
 Initially I had adopted also windows of size 64x64 pixels and 256x256 pixels. However, those two sizes didn't make a difference in detecting cars in the `project_video.mp4` clip; I therefore did without, speeding-up computation. Decreasing overlapping from 75% to 50% made the coputation faster but also made detection less reliable.
 
-I wrote a function `display_image_with_windows()` that draws the sliding windows in different colors over an image of choice, to help tune positions, scale and overlap. Image below shows sliding windows with a size of 128x128 pixels.  
-
+I wrote a function `display_image_with_windows()` that draws the sliding windows in different colors over an image of choice, to help tune positions, scale and overlap. Image below shows overlapping sliding windows with a size of 128x128 pixels; one window in the image is made by 4x4 squares in the grid.
+ 
 ![alt text][image1]
 
 ####2. Show some examples of test images to demonstrate how your pipeline is working.  What did you do to optimize the performance of your classifier?
@@ -111,14 +130,14 @@ In spite of the parameters tuning, that could give me a validation accuracy up t
 
  Increasing the number of HOG bins to 16 and adding color histograms to features helped, but not enough. Exploring the dataset, I could see that few images had the car from the perspective seen for the white car. Also, most dataset images were tightly cropped, not showing the entire car silhouette. I believe that can help limiting false positives, as the image doesn't include lane lines, curbs, signs, etc.; but it also prevents the classifier from learning the car outline, a conspicuous HOG feature.
  
-I decided I need a larger dataset. To do so, I wrote a short program to extract car images from one of Udacity's Annotated Driver datasets. This is comprised of frames taken in order by a camera; I picked images randomly among all available images, to reduce the probability that chosen images were in a tight time series.
+I decided I need a larger dataset. To do so, I wrote a short program to extract car images from one of Udacity's Annotated Driver Datasets. This is comprised of frames taken in order by a camera; I picked images randomly among all available images, to reduce the probability that chosen images were in a tight time series.
  
  Writing code to extract non-car images from Udacity's dataset would have been more time consuming, I decided instead to augment the dataset already in use, adding to it a left-to-right flipped copy of every non-car image. 
  
  With the additional images in the dataset, accuracy of validation went down from 99% to 98%, while detected cars in the heatmap were more prominent, with a stronger signal than many false positives.
   
  
-Detection still picked up recurrent false positives along the edges of the road, and in the middle of the lane, often enough for them to compete with detected cars in the heatmap. To get rid of them I went for hard negatives mining, identifying and adding to the dataset portions of the frame that were giving the frequent false positive. Below a sample from the added images.
+Detection still picked up recurrent false positives along the edges of the road, and in the middle of the lane, often enough for them to compete with detected cars in the heatmap. To get rid of them I went for hard negatives mining, identifying and adding to the dataset portions of the frame that were giving frequent false positives. Below a sample of the added images.
  
 | ![alt text][image2]| ![alt text][image3]| ![alt text][image4]|
 |:-------:|:-----------:|:--------:|
@@ -143,7 +162,7 @@ Here's a [link to my video result](./project_video-out.mp4)
 ####2. Describe how (and identify where in your code) you implemented some kind of filter for false positives and some method for combining overlapping bounding boxes.
 
 
-Function `main()` initialises a heatmap to all zeros (black) before it starts looping over the input video frames. For every frame, it detects the probable bounding boxes of cars calling `find_bounding_boxes()`, in blue in the video frame below.
+Function `main()` initialises a heatmap to all zeros (black) before it starts looping over the input video frames. For every frame, it detects probable bounding boxes of cars calling `find_bounding_boxes()`, drawn in blue in the video frame below.
 
 ![alt text][image12]
 
@@ -153,7 +172,7 @@ Function `main()` initialises a heatmap to all zeros (black) before it starts lo
  
 ![alt text][image13]
  
- Function `main()` uses the thresholded heatmap to determine bounding boxes for detected cars: it calls `scipy.ndimage.measurements.label()` to enumerate clusters of adjacent non-zero pixels from the thresholded heatmap. Below a graphic representation of the output of `label()`.
+ Function `main()` uses the thresholded heatmap to determine bounding boxes for cars: it calls `scipy.ndimage.measurements.label()` to enumerate clusters of adjacent non-zero pixels from the thresholded heatmap. Below a graphic representation of `label()`'s output.
  ![alt text][image14]
 
 Finally, `main()` determines the tightest (smallest) bounding box for every cluster, calling function `draw_labeled_bounding_boxes()` (adopted from Udacity's lesson). The frame below is an example of the result, saved into the output video stream.
@@ -176,7 +195,7 @@ False positives were still an issue. I mined the "hard negatives" and added them
    
 A better solution would be to select also negatives (non-cars) from Udacity's annotated driving dataset, more time-consuming but more robust. 
 
-The program processes an input video at around 6 frames per second, on a desktop computer (Intel Core i7-2700K CPU @ 3.50GHz with 8 GB of RAM). Training of the classifier is not an issue (24 seconds), but the frame rate is far from being suitable for real-time processing. Extraction of features from sliding windows can be made parallel, which using multi-threading may allow reaching the 25 fps of the input video stream.
+The program processes an input video at around 6 frames per second on a desktop computer (Intel Core i7-2700K CPU @ 3.50GHz with 8 GB of RAM). Training of the classifier is not an issue (24 seconds), but the frame rate is far from being suitable for real-time processing. Extraction of features from sliding windows can be made parallel, which using multi-threading may allow reaching the 25 fps of the input video stream.
 
 To improve performance I optimized the size of sliding windows for cars in the input video; a more general and robust implementation would require to use also smaller and larger sliding windows, further slowing down the computation.
 

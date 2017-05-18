@@ -5,6 +5,7 @@ import glob
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
+import argparse
 from time import time
 from sklearn.model_selection import train_test_split
 from sklearn import svm
@@ -14,6 +15,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.utils import shuffle
 import scipy.ndimage.measurements
 from prettytable import PrettyTable
+
 
 class Params:
     """
@@ -83,7 +85,7 @@ def load_and_pickle_datasets(augment=False):
 
     ''' 1 if the corresponding element in `subdirs` is a directory with car images, 0 if it is a directory with non-car
     images '''
-    subdirs_y = [1, 1, 1, 1, 1,0, 0, 0]
+    subdirs_y = [1, 1, 1, 1, 1, 0, 0, 0]
 
     dataset_x, dataset_y = [], []
     for subdir, y in zip(subdirs, subdirs_y):
@@ -147,7 +149,7 @@ def compute_histogram_features(image, channels, upper_bounds=None):
     given channels.
     """
     if upper_bounds is None:
-        upper_bounds = [255]*len(channels)
+        upper_bounds = [255] * len(channels)
     features = []
     for channel, upper_bound in zip(channels, upper_bounds):
         channel_features, _ = np.histogram(image[:, :, channel], bins=32, range=(0, upper_bound))
@@ -161,9 +163,9 @@ def compute_image_features(image):
     Computes and returs as a Numpy array the unscaled features vector for the given image. 
     """
     image_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    features1 = compute_hog_features(image_hsv[:,:,2])
+    features1 = compute_hog_features(image_hsv[:, :, 2])
     image_yuv = cv2.cvtColor(image, cv2.COLOR_BGR2YUV)
-    features2= compute_histogram_features(image_yuv, [1,2])
+    features2 = compute_histogram_features(image_yuv, [1, 2])
     features = np.concatenate((features1, features2))
     return features
 
@@ -242,10 +244,10 @@ class Perspective_grid:
         """
         for enlargement in range(2, 4):
             for row in range(-1, 3):
-                if enlargement == 1 and (row == -1 or row ==3):
+                if enlargement == 1 and (row == -1 or row == 3):
                     continue
-                x0 = self._roi[0][0]+self._x_step//2
-                y0 = self._horizon + row * self._y_step * enlargement - self._y_step//2
+                x0 = self._roi[0][0] + self._x_step // 2
+                y0 = self._horizon + row * self._y_step * enlargement - self._y_step // 2
                 x1, y1 = x0 + self._x_size * enlargement - 1, y0 + self._y_size * enlargement - 1
                 if y1 > self._roi[1][1]:
                     continue
@@ -290,7 +292,7 @@ def display_image_with_windows(image):
                 color[1] = (color[1] - 64) % 256
                 color[2] = (color[2] + 64) % 256
 
-        cv2.imwrite('windows-'+str(enlargement)+'.png', image_copy)
+        cv2.imwrite('windows-' + str(enlargement) + '.png', image_copy)
         plt.imshow(image_copy[:, :, ::-1])
         plt.show()
 
@@ -373,8 +375,8 @@ def update_heat_map(heat_map, bounding_boxes):
     new_heat = np.zeros_like(heat_map)
     for bbox in bounding_boxes:
         x0, y0, x1, y1 = bbox
-        new_heat[y0:y1+1, x0:x1+1] += 100
-    heat_map= (14*heat_map + new_heat)/15
+        new_heat[y0:y1 + 1, x0:x1 + 1] += 100
+    heat_map = (14 * heat_map + new_heat) / 15
     thresholded = np.rint(heat_map).astype(np.uint)
     thresholded[heat_map < threshold] = 0
     return heat_map, thresholded
@@ -402,7 +404,33 @@ def draw_labeled_bounding_boxes(frame, labels):
     return frame
 
 
+def parse_args():
+    """
+    Parses the program command-line arguments.
+    """
+
+    # Description of this program.
+    desc = "Vehicle Detection -Project for Udacity's Self-Driving Cars Nanodegree Program."
+
+    # Create the argument parser.
+    parser = argparse.ArgumentParser(description=desc)
+
+    # Add arguments to the parser.
+    parser.add_argument("--input", required=False, default='project_video.mp4',
+                        help="name of the input file with video clip to be processed")
+
+    # Parse the command-line arguments.
+    args = parser.parse_args()
+
+    # Get the arguments.
+    input_fname = args.input
+
+    return input_fname
+
+
 def main():
+    input_fname = parse_args()
+
     # Read the dataset (and save it pickled, if not done already)
     if not os.path.isfile(Params.pickled_dataset):
         print('Dataset file', Params.pickled_dataset, 'not found; making it.')
@@ -432,16 +460,7 @@ def main():
             classifier = from_pickle['classifier']
             scaler = from_pickle['scaler']
 
-    # Uncomment below for parameters tuning and debugging on a given test image
-    # img= cv2.imread('test_images/test2.jpg')
-    # display_image_with_windows(img)
-    # plt.imshow(img[:,:,::-1])
-    # plt.show()
-    # process_test_images(classifier, scaler)
-    # exit(0)
-
     # Open the input video stream and determine its resolution and frame rate
-    input_fname = 'project_video.mp4'
     vidcap = cv2.VideoCapture(input_fname)
     assert vidcap is not None
     fps = vidcap.get(cv2.CAP_PROP_FPS)
@@ -456,8 +475,8 @@ def main():
 
     # Open the output video stream, with the same resolution and frame rate as the input video stream
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    # TODO fix this hard-wiring
-    out_fname='project_video-out2.mp4'
+    out_fname, out_fext = os.path.splitext(input_fname)
+    out_fname += '-out' + out_fext
     vidwrite = cv2.VideoWriter(out_fname, fourcc=fourcc, fps=fps,
                                frameSize=(horizontal_resolution, vertical_resolution))
 
@@ -466,7 +485,6 @@ def main():
     frame_counter = 0
     start_time = time()
     # Main loop, process one frame at a time from the input video stream, and send the result to the output stream
-    snap_counter = 0
     while (True):
         read, frame = vidcap.read()
         if not read:
@@ -474,32 +492,24 @@ def main():
         frame_counter += 1
         sys.stdout.write("\rProcessing frame: {0:>6}".format(frame_counter))
         sys.stdout.flush()
+
         # Use the classifier and scaler to find bounding boxes of probable cars in the frame
         bounding_boxes, total_windows = find_bounding_boxes(frame, classifier, scaler)
 
-        # for bbox in bounding_boxes:
-            #draw_bounding_box(frame, *bbox)
-
         # Update the heatmap with the found bounding boxes, threshold it
         heat_map, thresholded = update_heat_map(heat_map, bounding_boxes)
+
         # Label adjacent non-zero pixels in the thresholded heatmap
         labels = scipy.ndimage.measurements.label(thresholded)
+
         # Draw the refined bounding boxes over the camera frame
         frame_with_boxes = draw_labeled_bounding_boxes(frame, labels)
 
-        # heat_pixmap = np.array(labels[0], dtype=np.uint8)
-        # zeros = np.zeros_like(labels[0], dtype =np.uint8)
-        # color_map = cv2.merge((labels[0], labels[0], labels[0]))
-        # color_map = cv2.add(color_map, frame_with_boxes)
-        # color_map = np.rint(color_map).astype(np.uint8)
-
-        # Write the processed frame to output
-        # vidwrite.write(color_map)
+        # Write the result to the output stream
         vidwrite.write(frame_with_boxes)
 
-
     elapsed = time() - start_time
-    print('\nProcessing time', int(elapsed), 's at {:.3f}'.format(frame_counter / elapsed), 'fps, output in',out_fname)
+    print('\nProcessing time', int(elapsed), 's at {:.3f}'.format(frame_counter / elapsed), 'fps, output in', out_fname)
 
 
 if __name__ == '__main__':
