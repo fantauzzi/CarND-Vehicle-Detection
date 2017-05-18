@@ -1,4 +1,4 @@
-#README
+# README
 
 **Vehicle Detection Project**
 
@@ -50,18 +50,18 @@ where `<video_clip>` is the name of the file with the video clip to be processed
 [video1]: ./project_video.mp4
 
 ## [Rubric](https://review.udacity.com/#!/rubrics/513/view) Points
-###Here I will consider the requirements individually and describe how I addressed each one in my implementation.  
+### Here I will consider the requirements individually and describe how I addressed each one in my implementation.  
 
 ---
-###Writeup / README
+### Writeup / README
 
-####1. Provide a Writeup / README that includes all the rubric points and how you addressed each one.  
+#### 1. Provide a Writeup / README that includes all the rubric points and how you addressed each one.  
 
 This is it!
 
-###Histogram of Oriented Gradients (HOG)
+### Histogram of Oriented Gradients (HOG)
 
-####1. Explain how (and identify where in your code) you extracted HOG features from the training images.
+#### 1. Explain how (and identify where in your code) you extracted HOG features from the training images.
 
 The `main()` function tries to load the dataset from a pickled file `car-no-car.p`. If it doesn't find it, then it loads the dataset images, and pickles them along with their labels calling `load_and_pickle_datasets()`. The dataset has been obtained from:
  
@@ -81,7 +81,7 @@ Function `compute_image_features()` concatenates and returns HOG and color histo
   * a HOG for the V channel of the image in HSV color space;
   * a color histogram (16 bins each) for the U and V channels of the image in YUV color space.
 
-####2. Explain how you settled on your final choice of HOG parameters.
+#### 2. Explain how you settled on your final choice of HOG parameters.
 
 Images, before being used to train and validate the classifier and for detection, are all resized to 64x64 pixels.
 
@@ -94,7 +94,7 @@ I had three ways to test and tune parameter values, for HOG and other stages of 
 I tuned parameters by trial and error first running the trained classifier on a validation set I sampled,  until further tweaking didn't bring about significant improvements, and then on frames I selected from the input video clip. Test on video frames was subjective.
 
 
-####3. Describe how (and identify where in your code) you trained a classifier using your selected HOG features (and color features if you used them).
+#### 3. Describe how (and identify where in your code) you trained a classifier using your selected HOG features (and color features if you used them).
 
 
 Function `fit_and_pickle_classifier()` re-scales image features with `sklearn.preprocessing.StandardScaler`, which results in improved detection accuracy. It then fits a Support Vector Machine (SVM) linear classifier with `sklearn.svm.LinearSVC¶()`, evaluates the result on the validation set, and saves scaler and classifier in a pickled file. At the next run, it will load them from the pickled file and avoid repeating the computation.
@@ -112,9 +112,9 @@ Overall accuracy of the trained classifier on the validation set is 0.980. Here 
 When using validation to tune parameters, I tried to obtain a validation accuracy as high as possible, while maintaining precision and recall for both classes above 0.95 and, most important, solid (if subjective) detection of cars in video frames.
 
 
-###Sliding Window Search
+### Sliding Window Search
 
-####1. Describe how (and identify where in your code) you implemented a sliding window search.  How did you decide what scales to search and how much to overlap windows?
+#### 1. Describe how (and identify where in your code) you implemented a sliding window search.  How did you decide what scales to search and how much to overlap windows?
 
 Class `Perspective_grid` is a Python generator that yields coordinates for a sliding window. Using it as an iterator, it provides a succession of sliding window coordinates that cover the region of interest (ROI) in the image, in a certain pattern. The ROI goes from where the horizon should be down to the bottom of the screen. Windows have size of 128x128 pixels and 192*192 pixels, and windows of the same size overlap each other by 75%. Smaller windows cover the ROI closer to the horizon, while larger windows cover it closer to the bottom of the screen. 
 
@@ -124,7 +124,7 @@ I wrote a function `display_image_with_windows()` that draws the sliding windows
  
 ![alt text][image1]
 
-####2. Show some examples of test images to demonstrate how your pipeline is working.  What did you do to optimize the performance of your classifier?
+#### 2. Show some examples of test images to demonstrate how your pipeline is working.  What did you do to optimize the performance of your classifier?
 
 In spite of the parameters tuning, that could give me a validation accuracy up to 99%, detection was often missing the white car, prominent on the right side of sevaral test frames. Detection was week for both cars, but especially the white one, with few or no sliding windows detecting them in each frame. As a consequence, cars in the heatmap couldn't be differentiated from false positives; any thresholding that would remove a significant amount of false positives would also remove the cars!
 
@@ -155,11 +155,11 @@ The initial dataset had 2826 car and 17936 non-car images. The expanded dataset 
 
 ### Video Implementation
 
-####1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (somewhat wobbly or unstable bounding boxes are ok as long as you are identifying the vehicles most of the time with minimal false positives.)
+#### 1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (somewhat wobbly or unstable bounding boxes are ok as long as you are identifying the vehicles most of the time with minimal false positives.)
 Here's a [link to my video result](./project_video-out.mp4)
 
 
-####2. Describe how (and identify where in your code) you implemented some kind of filter for false positives and some method for combining overlapping bounding boxes.
+#### 2. Describe how (and identify where in your code) you implemented some kind of filter for false positives and some method for combining overlapping bounding boxes.
 
 
 Function `main()` initialises a heatmap to all zeros (black) before it starts looping over the input video frames. For every frame, it detects probable bounding boxes of cars calling `find_bounding_boxes()`, drawn in blue in the video frame below.
@@ -181,9 +181,9 @@ Finally, `main()` determines the tightest (smallest) bounding box for every clus
 
 ---
 
-###Discussion
+### Discussion
 
-####1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
+#### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
  I could reach an accuracy on the validation set of up to 99% and still have detection miss cars in video frames, and give plenty of false positives. In the heatmap, cars were not distinguishable from false positive, having comparable intensities.
    
