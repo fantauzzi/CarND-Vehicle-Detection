@@ -281,7 +281,7 @@ def display_image_with_windows(image):
     windows = Perspective_grid(image.shape[1], image.shape[0])
 
     plt.subplots()
-    for enlargement in range(1, 4):
+    for enlargement in range(2, 4):
         image_copy = np.copy(image)
         color = [0, 255, 0]
         for window in windows:
@@ -290,6 +290,7 @@ def display_image_with_windows(image):
                 color[1] = (color[1] - 64) % 256
                 color[2] = (color[2] + 64) % 256
 
+        cv2.imwrite('windows-'+str(enlargement)+'.png', image_copy)
         plt.imshow(image_copy[:, :, ::-1])
         plt.show()
 
@@ -432,7 +433,10 @@ def main():
             scaler = from_pickle['scaler']
 
     # Uncomment below for parameters tuning and debugging on a given test image
-    # img= cv2.imread('test_images/test3.jpg')
+    # img= cv2.imread('test_images/test2.jpg')
+    # display_image_with_windows(img)
+    # plt.imshow(img[:,:,::-1])
+    # plt.show()
     # process_test_images(classifier, scaler)
     # exit(0)
 
@@ -452,7 +456,8 @@ def main():
 
     # Open the output video stream, with the same resolution and frame rate as the input video stream
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    out_fname='project_video-out41.mp4'
+    # TODO fix this hard-wiring
+    out_fname='project_video-out2.mp4'
     vidwrite = cv2.VideoWriter(out_fname, fourcc=fourcc, fps=fps,
                                frameSize=(horizontal_resolution, vertical_resolution))
 
@@ -472,39 +477,25 @@ def main():
         # Use the classifier and scaler to find bounding boxes of probable cars in the frame
         bounding_boxes, total_windows = find_bounding_boxes(frame, classifier, scaler)
 
-        '''for bbox in bounding_boxes:
-            x0, y0, x1, y1 = bbox
-            if x0 <=473 and x1-x0+1 == 128:
-                snap = frame[y0:y1+1,x0:x1+1,:]
-                assert snap.shape[0] % 64 == 0 and snap.shape[1] % 64 == 0
-                if snap.shape[0] > 64:
-                    snap= cv2.resize(snap, (64, 64), interpolation=cv2.INTER_AREA)
-                snap_fname='snapD{:05d}.png'.format(snap_counter)
-                cv2.imwrite(snap_fname, snap)
-                snap_counter+=1'''
+        # for bbox in bounding_boxes:
+            #draw_bounding_box(frame, *bbox)
 
-        for bbox in bounding_boxes:
-            draw_bounding_box(frame, *bbox)
         # Update the heatmap with the found bounding boxes, threshold it
         heat_map, thresholded = update_heat_map(heat_map, bounding_boxes)
         # Label adjacent non-zero pixels in the thresholded heatmap
         labels = scipy.ndimage.measurements.label(thresholded)
         # Draw the refined bounding boxes over the camera frame
         frame_with_boxes = draw_labeled_bounding_boxes(frame, labels)
-        zeros = np.zeros_like(heat_map, dtype =np.uint8)
-        heat_pixmap = np.array(heat_map, dtype=np.uint8)
-        color_map = cv2.merge((zeros, zeros, heat_pixmap))
-        color_map = cv2.add(color_map, frame_with_boxes)
-        to_print = '#{:d}'.format(frame_counter)
-        text_color = (0, 0, 128)
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        cv2.putText(color_map, to_print, (0, 50), font, 1, text_color, 2, cv2.LINE_AA)
+
+        # heat_pixmap = np.array(labels[0], dtype=np.uint8)
+        # zeros = np.zeros_like(labels[0], dtype =np.uint8)
+        # color_map = cv2.merge((labels[0], labels[0], labels[0]))
+        # color_map = cv2.add(color_map, frame_with_boxes)
+        # color_map = np.rint(color_map).astype(np.uint8)
 
         # Write the processed frame to output
-        vidwrite.write(color_map)
-        # vidwrite.write(frame_with_boxes)
-        if frame_counter > 250:
-            pass
+        # vidwrite.write(color_map)
+        vidwrite.write(frame_with_boxes)
 
 
     elapsed = time() - start_time

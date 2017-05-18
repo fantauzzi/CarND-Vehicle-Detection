@@ -131,4 +131,24 @@ In [88]: while (True):
 15 79.4108867905351
 16 81.4697981114816
 
+> python3 main.py
+Dataset file car-no-car.p not found; making it.
+Read 34671 images, 11999 with car, and 22672 with no car
+Training dataset size 31203 , validation 3468
+Trained classifier file classifier.p not found; making it.
+Computed features for training and validation set in 18 s
+Trained classifier in 6 s
+Accuracy on validation set 0.980103806228
+   Table with stats on validation set.
++-------+-----------+--------+---------+---------+
+| Class | Precision | Recall | F-score | Support |
++-------+-----------+--------+---------+---------+
+|   0   |   0.983   | 0.986  |  0.985  |   2278  |
+|   1   |   0.974   | 0.968  |  0.971  |   1190  |
++-------+-----------+--------+---------+---------+
+Source video project_video.mp4 is at 25.00 fps with resolution of 1280x720 pixels
+OpenCV: FFMPEG: tag 0x44495658/'XVID' is not supported with codec id 13 and format 'mp4 / MP4 (MPEG-4 Part 14)'
+OpenCV: FFMPEG: fallback to use tag 0x00000020/' ???'
+Processing frame:   1253
+Processing time 206 s at 6.074 fps, output in project_video-out41.mp4
 
