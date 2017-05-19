@@ -24,7 +24,7 @@ class Params:
     image_width = 64  # Desired width in pixels of images before feature extraction
     image_height = 64  # Desired height in pixels of images before feature extraction
     image_channels = 3  # Desired number of channels in images before feature extraction
-    pickled_dataset = 'car-no-car.p'  # File name for the pickled dataset
+    pickled_dataset_bname = 'car-no-car'  # File name for the pickled dataset
     pickled_classifier = 'classifier.p'  # File name for the pickled trained classifier
     dataset_base_dir = '/home/fanta/datasets/vehicles-detection'  # Base dir for the originals (not yet pickled) datasets
     random_seed = 42  # Answer to the Ultimate Question of Life, the Universe, and Everything
@@ -94,7 +94,6 @@ def load_and_pickle_datasets(augment=False):
             if not fname.endswith('.png'):
                 continue
             image = cv2.imread(path_to_subdir + '/' + fname)
-            # image = mpimg.imread(path_to_subdir + '/' + fname)
             assert image is not None
             image = format_image(image)
             dataset_x.append(image)
@@ -106,7 +105,18 @@ def load_and_pickle_datasets(augment=False):
                 dataset_y.append(label)
 
     dataset_x, dataset_y = shuffle(dataset_x, dataset_y, random_state=Params.random_seed)
-    pickle.dump((dataset_x, dataset_y), open(Params.pickled_dataset, "wb"))
+    ''' Break down the dataset in several pickled files, so they are small enough to be allowed on GitHub;
+    generate n_intervals+1 pickled files '''
+    n_intervals = 5
+    entries_per_file = len(dataset_x) // n_intervals
+    counter =0
+    for offset in range(0, len(dataset_y), entries_per_file):
+        chunk_x = dataset_x[offset:offset+entries_per_file]
+        chunk_y = dataset_y[offset:offset + entries_per_file]
+        pickle_fname= Params.pickled_dataset_bname + '-' + str(counter) + '.p'
+        pickle.dump((chunk_x, chunk_y), open(pickle_fname, "wb"))
+        counter +=1
+
     return dataset_x, dataset_y
 
 
@@ -432,13 +442,19 @@ def main():
     input_fname = parse_args()
 
     # Read the dataset (and save it pickled, if not done already)
-    if not os.path.isfile(Params.pickled_dataset):
-        print('Dataset file', Params.pickled_dataset, 'not found; making it.')
+    dataset_fnames=glob.glob(Params.pickled_dataset_bname+'*.p')
+    if len(dataset_fnames) == 0:
+        print('Dataset files', Params.pickled_dataset_bname+'*.p', 'not found; making them.')
         dataset_x, dataset_y = load_and_pickle_datasets(augment=Params.augment_dataset)
     else:
-        with open(Params.pickled_dataset, mode='rb') as pickle_file:
-            print('Loading dataset from file', Params.pickled_dataset)
-            dataset_x, dataset_y = pickle.load(pickle_file)
+        dataset_fnames.sort()
+        dataset_x, dataset_y = [], []
+        for pickle_fname in dataset_fnames:
+            with open(pickle_fname, mode='rb') as pickle_file:
+                print('Loading dataset from file', pickle_fname)
+                chunk_x, chunk_y = pickle.load(pickle_file)
+                dataset_x.extend(chunk_x)
+                dataset_y.extend(chunk_y)
 
     # Print dataset stats
     n_cars = sum(label == Params.car_label for label in dataset_y)
