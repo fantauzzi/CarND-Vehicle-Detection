@@ -19,7 +19,7 @@ In the project directory, type:
 where `<video_clip>` is the name of the file with the video clip to be processed. If not provided, it defaults to `project_video.mp4`
 
 ## Project Content
- * `car-no-car.p` pickled file with labeled dataset images.
+ * `car-no-car-*.p` pickled files with labeled dataset images.
  * `classifier.p` pickled file with trained classifier and scaler.
  * `extract.py` utility program to extract a random sample of car images from Udacity's Annotated Driver Dataset.
  * `.gitignore` GIT configuration file.
@@ -28,6 +28,7 @@ where `<video_clip>` is the name of the file with the video clip to be processed
  * `project_video.mp4` the test video clip.
  * `project_video-out.mp4` the processing output, with detected vehicles.
  * `README.md` this file, the project write-up.
+ * `requirements.txt` list of dependencies for `main.py` 
  * `test_images/` video frames useful for parameters tuning and debugging.
 
 [//]: # (Image References)
