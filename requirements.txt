@@ -1,0 +1,6 @@
+numpy
+matplotlib
+sklearn
+scipy
+prettytable
+cv2
